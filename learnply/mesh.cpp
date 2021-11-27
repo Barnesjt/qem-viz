@@ -189,6 +189,11 @@ Mesh::Mesh() {
 }
 
 void Mesh::initialize() {
+	//set orientation to clockwise (CW). Used for normals for lighting
+	orientation = 0;
+	//set indexes for vlist and flist, not strictly required, but may be convienient later
+	for (int i = 0; i < flist.size(); i++) flist.at(i)->index = i;
+	for (int i = 0; i < vlist.size(); i++) vlist.at(i)->index = i;
 }
 
 void Mesh::finalize() {

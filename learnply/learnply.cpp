@@ -32,18 +32,18 @@
 using std::vector;
 using std::string;
 
-//Vector of Polys instead (Because why not just load everything at once)
+//Vector of Meshes instead (Because why not just load everything at once)
 //Individual vectors for different data, this could be rolled into a single class, maybe later
 vector<string> all_obj_files;
-vector<Mesh*> all_polys;
+vector<Mesh*> all_meshes;
 
 //The marker for which ply we're looking at, used to index into the vectors and cycle through them
-int curr_poly = 0;
+int curr_mesh = 0;
 int face_target = 0;
 
 string OBJ_PATH = "../data/geometry/";
 
-Mesh* poly;
+Mesh* mesh;
 
 /*scene related variables*/
 const float zoomspeed = 0.9;
@@ -87,7 +87,7 @@ void mousewheel(int wheel, int direction, int x, int y);
 void reshape(int width, int height);
 
 /*display vis results*/
-void display_mesh(Mesh* poly);
+void display_mesh(Mesh* mesh);
 
 /*added functions*/
 string dispModeString(int mode);
@@ -107,18 +107,17 @@ int main(int argc, char* argv[])
 	std::sort(all_obj_files.begin(), all_obj_files.end(), SI::natural::compare<string>);
 
 	for (std::string i : all_obj_files) {
-		all_polys.push_back(new Mesh(const_cast<char*>((OBJ_PATH + i).c_str())));
-		auto myPoly = all_polys.back();
-		myPoly->initialize();
+		all_meshes.push_back(new Mesh(const_cast<char*>((OBJ_PATH + i).c_str())));
+		all_meshes.back()->initialize();
 	}
 
 	//if no ply files, then exit with error. otherwise set the first ply
-	if (all_polys.empty()) {
+	if (all_meshes.empty()) {
 		return 1;
 	}
 	else {
-		poly = all_polys.at(0);
-		curr_poly = 0;
+		mesh = all_meshes.at(0);
+		curr_mesh = 0;
 	}
 
 	/*init glut and create window*/
@@ -143,7 +142,7 @@ int main(int argc, char* argv[])
 	glutMainLoop();
 	
 	/*clear memory before exit*/
-	poly->finalize();	// finalize everything
+	mesh->finalize();	// finalize everything
 	return 0;
 }
 
@@ -259,7 +258,7 @@ void set_view(GLenum mode)
 Update the scene
 ******************************************************************************/
 
-void set_scene(GLenum mode, Mesh* poly)
+void set_scene(GLenum mode, Mesh* mesh)
 {
 	glTranslatef(translation[0], translation[1], -3.0);
 
@@ -304,7 +303,7 @@ void init(void) {
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
 	
 	glEnable(GL_NORMALIZE);
-	if (poly->orientation == 0)
+	if (mesh->orientation == 0)
 		glFrontFace(GL_CW);
 	else
 		glFrontFace(GL_CCW);
@@ -321,7 +320,7 @@ void keyboard(unsigned char key, int x, int y) {
 
 	switch (key) {
 	case 27:	// set excape key to exit program
-		poly->finalize();  // finalize_everything
+		for (auto m : all_meshes) m->finalize(); // finalize_everything
 		exit(0);
 		break;
 
@@ -345,10 +344,10 @@ void keyboard(unsigned char key, int x, int y) {
 
 	case 't':
 		//toggle through all ply files, increments and modulo on the vector size
-		curr_poly = ++curr_poly % all_polys.size();
+		curr_mesh = ++curr_mesh % all_meshes.size();
 
 		//reset the poly we are displaying, w/ min and max
-		poly = all_polys.at(curr_poly);
+		mesh = all_meshes.at(curr_mesh);
 
 		//recall keyboard function to make sure the correct display mode is set
 		keyboard('0' + display_mode, x, y);
@@ -482,10 +481,10 @@ void display(void)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	set_view(GL_RENDER);
-	set_scene(GL_RENDER, poly);
+	set_scene(GL_RENDER, mesh);
 
 	/*display the mesh*/
-	display_mesh(poly);
+	display_mesh(mesh);
 
 	glFlush();
 	glutSwapBuffers();
@@ -498,7 +497,7 @@ void display(void)
 Diaplay the polygon with visualization results
 ******************************************************************************/
 
-void display_mesh(Mesh* poly)
+void display_mesh(Mesh* mesh)
 {
 	unsigned int i, j;
 
@@ -522,7 +521,7 @@ void display_mesh(Mesh* poly)
 
 	glBegin(GL_TRIANGLES);
 	glColor3f(0.5, 0.5, 0.5);
-	for (auto f : poly->flist) {
+	for (auto f : mesh->flist) {
 		glNormal3d(f->normal.x, f->normal.y, f->normal.z);
 		for (int i = 0; i < 3; i++) {
 			glVertex3d(f->verts[i]->x, f->verts[i]->y, f->verts[i]->z);
