@@ -15,19 +15,16 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ply.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="tmatrix.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="trackball.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="polyhedron.cpp">
+    <ClCompile Include="learnply.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="learnply.cpp">
+    <ClCompile Include="mesh.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -38,19 +35,10 @@
     <ClInclude Include="icVector.H">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ply.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="tmatrix.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="trackball.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ply_io.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="polyhedron.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="glError.h">
@@ -60,6 +48,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="drawUtil.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="natural_sort.hpp">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mesh.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

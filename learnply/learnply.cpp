@@ -4,22 +4,46 @@
 #include <string.h>
 #include <fstream>
 #include <vector>
+#include <string>
+#include <iostream>
 
 #include "glError.h"
 #include "gl/glew.h"
 #include "gl/freeglut.h"
-#include "ply.h"
 #include "icVector.H"
 #include "icMatrix.H"
-#include "polyhedron.h"
 #include "trackball.h"
 #include "tmatrix.h"
 
 #include "drawUtil.h"
 
-Polyhedron* poly;
-std::vector<PolyLine> lines;
-std::vector<icVector3> points;
+// Data structure to hold Mesh data, includes code adapted from: http://web.engr.oregonstate.edu/~mjb/cs550/loadobjfile.cpp
+#include "mesh.h"
+
+//Added include, specifically for reading directory contents
+#include <Windows.h>
+
+//Added natural sort from: https://github.com/scopeInfinity/NaturalSort
+//For sorting file names into best order (e.g. r2.ply before r10.ply)
+#include "natural_sort.hpp"
+
+
+//Vectors and Strings
+using std::vector;
+using std::string;
+
+//Vector of Polys instead (Because why not just load everything at once)
+//Individual vectors for different data, this could be rolled into a single class, maybe later
+vector<string> all_obj_files;
+vector<Mesh*> all_polys;
+
+//The marker for which ply we're looking at, used to index into the vectors and cycle through them
+int curr_poly = 0;
+int face_target = 0;
+
+string OBJ_PATH = "../data/geometry/";
+
+Mesh* poly;
 
 /*scene related variables*/
 const float zoomspeed = 0.9;
@@ -46,41 +70,29 @@ float s_old, t_old;
 float rotmat[4][4];
 double zoom = 1.0;
 double translation[2] = { 0, 0 };
-int mouse_mode = -2;	// -1 = no action, 1 = tranlate y, 2 = rotate
-
-// IBFV related variables (Van Wijk 2002)
-//https://www.win.tue.nl/~vanwijk/ibfv/
-#define NPN		64
-#define SCALE	4.0
-#define ALPHA	8
-float tmax = win_width / (SCALE * NPN);
-float dmax = SCALE / win_width;
-unsigned char* pixels;
+int mouse_mode = -2;	// -1 = no action, 1 = translate y, 2 = rotate
 
 /******************************************************************************
 Forward declaration of functions
 ******************************************************************************/
 
 void init(void);
-void initIBFV();
 
 /*glut attaching functions*/
 void keyboard(unsigned char key, int x, int y);
 void motion(int x, int y);
-void displayIBFV();
 void display(void);
 void mouse(int button, int state, int x, int y);
 void mousewheel(int wheel, int direction, int x, int y);
 void reshape(int width, int height);
 
-/*functions for element picking*/
-void display_vertices(GLenum mode, Polyhedron* poly);
-void display_quads(GLenum mode, Polyhedron* poly);
-void display_selected_vertex(Polyhedron* poly);
-void display_selected_quad(Polyhedron* poly);
-
 /*display vis results*/
-void display_polyhedron(Polyhedron* poly);
+void display_mesh(Mesh* poly);
+
+/*added functions*/
+string dispModeString(int mode);
+void DoRasterString(float x, float y, float z, char* s);
+std::vector<std::string> get_all_obj_in_folder(std::string folder);
 
 /******************************************************************************
 Main program.
@@ -88,23 +100,33 @@ Main program.
 
 int main(int argc, char* argv[])
 {
-	/*load mesh from ply file*/
-	FILE* this_file = fopen("../data/scalar_data/r2.ply", "r");
-	poly = new Polyhedron(this_file);
-	fclose(this_file);
-	
-	/*initialize the mesh*/
-	poly->initialize(); // initialize the mesh
-	poly->write_info();
+	//Get all ply files in directory
+	all_obj_files = get_all_obj_in_folder(OBJ_PATH);
 
+	//Natural sorting of ply files
+	std::sort(all_obj_files.begin(), all_obj_files.end(), SI::natural::compare<string>);
+
+	for (std::string i : all_obj_files) {
+		all_polys.push_back(new Mesh(const_cast<char*>((OBJ_PATH + i).c_str())));
+		auto myPoly = all_polys.back();
+		myPoly->initialize();
+	}
+
+	//if no ply files, then exit with error. otherwise set the first ply
+	if (all_polys.empty()) {
+		return 1;
+	}
+	else {
+		poly = all_polys.at(0);
+		curr_poly = 0;
+	}
 
 	/*init glut and create window*/
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
 	glutInitWindowPosition(20, 20);
 	glutInitWindowSize(win_width, win_height);
-	glutCreateWindow("Scientific Visualization");
-
+	glutCreateWindow("CS553 - Group 1 - QEM w/ Ellipsoids");
 
 	/*initialize openGL*/
 	init();
@@ -122,8 +144,62 @@ int main(int argc, char* argv[])
 	
 	/*clear memory before exit*/
 	poly->finalize();	// finalize everything
-	free(pixels);
 	return 0;
+}
+
+/******************************************************************************
+Get all .obj files
+
+Function adapted from: https://stackoverflow.com/a/20847429
+******************************************************************************/
+// Function adapted from: https://stackoverflow.com/a/20847429
+std::vector<std::string> get_all_obj_in_folder(std::string folder)
+{
+	std::vector<std::string> names;
+	std::string search_path = folder + "/*.obj";
+	WIN32_FIND_DATA fd;
+	HANDLE hFind = ::FindFirstFile(search_path.c_str(), &fd);
+	if (hFind != INVALID_HANDLE_VALUE) {
+		do {
+			// read all (real) files in current folder
+			// , delete '!' read other 2 default folder . and ..
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+				names.push_back(fd.cFileName);
+			}
+		} while (::FindNextFile(hFind, &fd));
+		::FindClose(hFind);
+	}
+	return names;
+}
+
+/******************************************************************************
+Use glut to display a string of characters using a raster font
+
+Borrowed from CS450 Sample Code
+******************************************************************************/
+void
+DoRasterString(float x, float y, float z, char* s)
+{
+	glRasterPos3f((GLfloat)x, (GLfloat)y, (GLfloat)z);
+	char c;			// one character to print
+	for (; (c = *s) != '\0'; s++)
+	{
+		glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24, c);
+	}
+}
+
+/******************************************************************************
+Convert a display mode number to a string
+******************************************************************************/
+string dispModeString(int mode) {
+	switch (mode) {
+	case 1:
+		return "Solid";
+	case 2:
+		return "Solid w/ Error Ellipsoids";
+	default:
+		return "Unrecognized";
+	}
 }
 
 /******************************************************************************
@@ -183,7 +259,7 @@ void set_view(GLenum mode)
 Update the scene
 ******************************************************************************/
 
-void set_scene(GLenum mode, Polyhedron* poly)
+void set_scene(GLenum mode, Mesh* poly)
 {
 	glTranslatef(translation[0], translation[1], -3.0);
 
@@ -200,8 +276,11 @@ void set_scene(GLenum mode, Polyhedron* poly)
 		glMultMatrixf(mat);
 	}
 
-	glScalef(0.9 / poly->radius, 0.9 / poly->radius, 0.9 / poly->radius);
-	glTranslatef(-poly->center.entry[0], -poly->center.entry[1], -poly->center.entry[2]);
+	glScalef(0.9, 0.9, 0.9);
+	glTranslatef(0.0, 0.0, 0.0);
+
+	//glScalef(0.9 / poly->radius, 0.9 / poly->radius, 0.9 / poly->radius);
+	//glTranslatef(-poly->center.entry[0], -poly->center.entry[1], -poly->center.entry[2]);
 }
 
 /******************************************************************************
@@ -232,178 +311,6 @@ void init(void) {
 }
 
 /******************************************************************************
-Initialize IBFV patterns
-******************************************************************************/
-
-void initIBFV()
-{
-	pixels = (unsigned char*)malloc(sizeof(unsigned char) * win_width * win_height * 3);
-	memset(pixels, 255, sizeof(unsigned char) * win_width * win_height * 3);
-
-	tmax = win_width / (SCALE * NPN);
-	dmax = SCALE / win_width;
-
-	int lut[256];
-	int phase[NPN][NPN];
-	GLubyte pat[NPN][NPN][4];
-	int i, j, k;
-
-	for (i = 0; i < 256; i++) lut[i] = i < 127 ? 0 : 255;
-	for (i = 0; i < NPN; i++)
-		for (j = 0; j < NPN; j++) phase[i][j] = rand() % 256;
-
-	for (i = 0; i < NPN; i++)
-	{
-		for (j = 0; j < NPN; j++)
-		{
-			pat[i][j][0] =
-				pat[i][j][1] =
-				pat[i][j][2] = lut[(phase[i][j]) % 255];
-			pat[i][j][3] = ALPHA;
-		}
-	}
-	
-	glNewList(1, GL_COMPILE);
-	glTexImage2D(GL_TEXTURE_2D, 0, 4, NPN, NPN, 0, GL_RGBA, GL_UNSIGNED_BYTE, pat);
-	glEndList();
-}
-
-/******************************************************************************
-Pick objects from the scene
-******************************************************************************/
-
-int processHits(GLint hits, GLuint buffer[])
-{
-	unsigned int i, j;
-	GLuint names, * ptr;
-	double smallest_depth = 1.0e+20, current_depth;
-	int seed_id = -1;
-	unsigned char need_to_update;
-
-	ptr = (GLuint*)buffer;
-	for (i = 0; i < hits; i++) {  /* for each hit  */
-		need_to_update = 0;
-		names = *ptr;
-		ptr++;
-
-		current_depth = (double)*ptr / 0x7fffffff;
-		if (current_depth < smallest_depth) {
-			smallest_depth = current_depth;
-			need_to_update = 1;
-		}
-		ptr++;
-		current_depth = (double)*ptr / 0x7fffffff;
-		if (current_depth < smallest_depth) {
-			smallest_depth = current_depth;
-			need_to_update = 1;
-		}
-		ptr++;
-		for (j = 0; j < names; j++) {  /* for each name */
-			if (need_to_update == 1)
-				seed_id = *ptr - 1;
-			ptr++;
-		}
-	}
-	return seed_id;
-}
-
-/******************************************************************************
-Diaplay all quads for selection
-******************************************************************************/
-
-void display_quads(GLenum mode, Polyhedron* this_poly)
-{
-	unsigned int i, j;
-	GLfloat mat_diffuse[4];
-
-	glEnable(GL_POLYGON_OFFSET_FILL);
-	glPolygonOffset(1., 1.);
-	glEnable(GL_DEPTH_TEST);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	glShadeModel(GL_SMOOTH);
-	glDisable(GL_LIGHTING);
-
-	for (i = 0; i < this_poly->nquads; i++) {
-		if (mode == GL_SELECT)
-			glLoadName(i + 1);
-
-		Quad* temp_q = this_poly->qlist[i];
-		
-		glBegin(GL_POLYGON);
-		for (j = 0; j < 4; j++) {
-			Vertex* temp_v = temp_q->verts[j];
-			glVertex3d(temp_v->x, temp_v->y, temp_v->z);
-		}
-		glEnd();
-	}
-}
-
-/******************************************************************************
-Diaplay all vertices for selection
-******************************************************************************/
-
-void display_vertices(GLenum mode, Polyhedron* this_poly)
-{
-	for (int i = 0; i < this_poly->nverts; i++) {
-		if (mode == GL_SELECT)
-			glLoadName(i + 1);
-
-		CHECK_GL_ERROR();
-
-		Vertex* temp_v = this_poly->vlist[i];
-		drawDot(temp_v->x, temp_v->y, temp_v->z, 0.15);
-	}
-	CHECK_GL_ERROR();
-}
-
-/******************************************************************************
-Diaplay selected quad
-******************************************************************************/
-
-void display_selected_quad(Polyhedron* this_poly)
-{
-	if (this_poly->selected_quad == -1)
-	{
-		return;
-	}
-
-	unsigned int i, j;
-
-	glDisable(GL_POLYGON_OFFSET_FILL);
-	glEnable(GL_DEPTH_TEST);
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	glShadeModel(GL_SMOOTH);
-	glDisable(GL_LIGHTING);
-
-	Quad* temp_q = this_poly->qlist[this_poly->selected_quad];
-
-	glBegin(GL_POLYGON);
-	for (j = 0; j < 4; j++) {
-		Vertex* temp_v = temp_q->verts[j];
-		glColor3f(1.0, 0.0, 0.0);
-		glVertex3d(temp_v->x, temp_v->y, temp_v->z);
-	}
-	glEnd();
-}
-
-/******************************************************************************
-Diaplay selected vertex
-******************************************************************************/
-
-void display_selected_vertex(Polyhedron* this_poly)
-{
-	if (this_poly->selected_vertex == -1)
-	{
-		return;
-	}
-
-	Vertex* temp_v = this_poly->vlist[this_poly->selected_vertex];
-	drawDot(temp_v->x, temp_v->y, temp_v->z, 0.15, 1.0, 0.0,0.0);
-
-	CHECK_GL_ERROR();
-}
-
-/******************************************************************************
 Process a keyboard action.  In particular, exit the program when an
 "escape" is pressed in the window.
 ******************************************************************************/
@@ -411,9 +318,6 @@ Process a keyboard action.  In particular, exit the program when an
 void keyboard(unsigned char key, int x, int y) {
 	int i;
 
-	// clear out lines and points
-	lines.clear();
-	points.clear();
 
 	switch (key) {
 	case 27:	// set excape key to exit program
@@ -421,54 +325,13 @@ void keyboard(unsigned char key, int x, int y) {
 		exit(0);
 		break;
 
-	case '1':	// solid color display with lighting
+	case '1':	// solid obj display
 		display_mode = 1;
 		glutPostRedisplay();
 		break;
 
-	case '2':	// wireframe display
+	case '2':	// solid obj w/ ellipsoids
 		display_mode = 2;
-		glutPostRedisplay();
-		break;
-
-	case '3':	// checkerboard display
-	{
-		display_mode = 3;
-
-		double L = (poly->radius * 2) / 30;
-		for (int i = 0; i < poly->nquads; i++) {
-			Quad* temp_q = poly->qlist[i];
-			for (int j = 0; j < 4; j++) {
-
-				Vertex* temp_v = temp_q->verts[j];
-
-				temp_v->R = int(temp_v->x / L) % 2 == 0 ? 1 : 0;
-				temp_v->G = int(temp_v->y / L) % 2 == 0 ? 1 : 0;
-				temp_v->B = 0.0;
-			}
-		}
-		glutPostRedisplay();
-	}
-	break;
-
-	case '4':	// Drawing points and lines created by the dots_and_lines_example() function
-		display_mode = 4;
-		dots_and_lines_example(&points, &lines);
-		glutPostRedisplay();
-		break;
-
-	case '5':	// IBFV vector field display
-		display_mode = 5;
-		glutPostRedisplay();
-		break;
-
-	case '6':	// add your own display mode
-		display_mode = 6;
-		{
-
-			// your code goes here
-			
-		}
 		glutPostRedisplay();
 		break;
 
@@ -477,6 +340,18 @@ void keyboard(unsigned char key, int x, int y) {
 		translation[0] = 0;
 		translation[1] = 0;
 		zoom = 1.0;
+		glutPostRedisplay();
+		break;
+
+	case 't':
+		//toggle through all ply files, increments and modulo on the vector size
+		curr_poly = ++curr_poly % all_polys.size();
+
+		//reset the poly we are displaying, w/ min and max
+		poly = all_polys.at(curr_poly);
+
+		//recall keyboard function to make sure the correct display mode is set
+		keyboard('0' + display_mode, x, y);
 		glutPostRedisplay();
 		break;
 	}
@@ -559,87 +434,6 @@ void mouse(int button, int state, int x, int y) {
 		}
 		else if (state == GLUT_UP) {
 
-			if (button == GLUT_LEFT_BUTTON && key == GLUT_ACTIVE_SHIFT) {  // build up the selection feedback mode
-
-				/*select face*/
-
-				GLuint selectBuf[512];
-				GLint hits;
-				GLint viewport[4];
-
-				glGetIntegerv(GL_VIEWPORT, viewport);
-
-				glSelectBuffer(win_width, selectBuf);
-				(void)glRenderMode(GL_SELECT);
-
-				glInitNames();
-				glPushName(0);
-
-				glMatrixMode(GL_PROJECTION);
-				glPushMatrix();
-				glLoadIdentity();
-
-				/*create 5x5 pixel picking region near cursor location */
-				gluPickMatrix((GLdouble)x, (GLdouble)(viewport[3] - y), 1.0, 1.0, viewport);
-
-				set_view(GL_SELECT);
-				set_scene(GL_SELECT, poly);
-				display_quads(GL_SELECT, poly);
-
-				glMatrixMode(GL_PROJECTION);
-				glPopMatrix();
-				glFlush();
-
-				glMatrixMode(GL_MODELVIEW);
-
-				hits = glRenderMode(GL_RENDER);
-				poly->selected_quad = processHits(hits, selectBuf);
-				printf("Selected quad id = %d\n", poly->selected_quad);
-				glutPostRedisplay();
-
-				CHECK_GL_ERROR();
-
-			}
-			else if (button == GLUT_LEFT_BUTTON && key == GLUT_ACTIVE_CTRL)
-			{
-				/*select vertex*/
-
-				GLuint selectBuf[512];
-				GLint hits;
-				GLint viewport[4];
-
-				glGetIntegerv(GL_VIEWPORT, viewport);
-
-				glSelectBuffer(win_width, selectBuf);
-				(void)glRenderMode(GL_SELECT);
-
-				glInitNames();
-				glPushName(0);
-
-				glMatrixMode(GL_PROJECTION);
-				glPushMatrix();
-				glLoadIdentity();
-
-				/*  create 5x5 pixel picking region near cursor location */
-				gluPickMatrix((GLdouble)x, (GLdouble)(viewport[3] - y), 1.0, 1.0, viewport);
-
-				set_view(GL_SELECT);
-				set_scene(GL_SELECT, poly);
-				display_vertices(GL_SELECT, poly);
-
-				glMatrixMode(GL_PROJECTION);
-				glPopMatrix();
-				glFlush();
-
-				glMatrixMode(GL_MODELVIEW);
-
-				hits = glRenderMode(GL_RENDER);
-				poly->selected_vertex = processHits(hits, selectBuf);
-				printf("Selected vert id = %d\n", poly->selected_vertex);
-				glutPostRedisplay();
-
-			}
-
 			mouse_mode = -1;
 		}
 	}
@@ -674,135 +468,8 @@ void reshape(int width, int height)
 	glViewport(0, 0, width, height);
 
 	set_view(GL_RENDER);
-
-	// reset IBFV pixels buffer
-	free(pixels);
-	initIBFV();
 }
 
-/******************************************************************************
-Display IBFV vector field visualization (used for Project 3)
-******************************************************************************/
-
-void displayIBFV()
-{
-	glDisable(GL_LIGHTING);
-	glDisable(GL_LIGHT0);
-	glDisable(GL_LIGHT1);
-	glDisable(GL_BLEND);
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-
-	glEnable(GL_TEXTURE_2D);
-	glShadeModel(GL_FLAT);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	glClearColor(0.5, 0.5, 0.5, 1.0);  // background for rendering color coding and lighting
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	// draw the mesh using pixels and use vector field to advect texture coordinates
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, win_width, win_height, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
-
-	double modelview_matrix[16], projection_matrix[16];
-	int viewport[4];
-	glGetDoublev(GL_MODELVIEW_MATRIX, modelview_matrix);
-	glGetDoublev(GL_PROJECTION_MATRIX, projection_matrix);
-	glGetIntegerv(GL_VIEWPORT, viewport);
-
-	for (int i = 0; i < poly->nquads; i++)
-	{
-		Quad* qtemp = poly->qlist[i];
-
-		glBegin(GL_QUADS);
-		for (int j = 0; j < 4; j++)
-		{
-			Vertex* vtemp = qtemp->verts[j];
-
-			double tx, ty, dummy;
-			gluProject((GLdouble)vtemp->x, (GLdouble)vtemp->y, (GLdouble)vtemp->z,
-				modelview_matrix, projection_matrix, viewport, &tx, &ty, &dummy);
-
-			tx = tx / win_width;
-			ty = ty / win_height;
-			
-			icVector2 dp = icVector2(vtemp->vx, vtemp->vy);
-			normalize(dp);
-			dp *= dmax;
-
-			double dx = -dp.x;
-			double dy = -dp.y;
-
-			float px = tx + dx;
-			float py = ty + dy;
-
-			glTexCoord2f(px, py);
-			glVertex3d(vtemp->x, vtemp->y, vtemp->z);
-		}
-		glEnd();
-	}
-
-	glEnable(GL_BLEND);
-
-	// blend in noise pattern
-	glMatrixMode(GL_PROJECTION);
-	glPushMatrix();
-	glLoadIdentity();
-
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
-	glLoadIdentity();
-
-	glTranslatef(-1.0, -1.0, 0.0);
-	glScalef(2.0, 2.0, 1.0);
-
-	glCallList(1);
-
-	glBegin(GL_QUAD_STRIP);
-
-	glTexCoord2f(0.0, 0.0);  glVertex2f(0.0, 0.0);
-	glTexCoord2f(0.0, tmax); glVertex2f(0.0, 1.0);
-	glTexCoord2f(tmax, 0.0);  glVertex2f(1.0, 0.0);
-	glTexCoord2f(tmax, tmax); glVertex2f(1.0, 1.0);
-	glEnd();
-	glDisable(GL_BLEND);
-
-	glMatrixMode(GL_MODELVIEW);
-	glPopMatrix();
-
-	glMatrixMode(GL_PROJECTION);
-	glPopMatrix();
-
-	glReadPixels(0, 0, win_width, win_height, GL_RGB, GL_UNSIGNED_BYTE, pixels);
-
-	// draw the mesh using pixels without advecting texture coords
-	glClearColor(1.0, 1.0, 1.0, 1.0);  // background for rendering color coding and lighting
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, win_width, win_height, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
-	for (int i = 0; i < poly->nquads; i++)
-	{
-		Quad* qtemp = poly->qlist[i];
-		glBegin(GL_QUADS);
-		for (int j = 0; j < 4; j++)
-		{
-			Vertex* vtemp = qtemp->verts[j];
-			double tx, ty, dummy;
-			gluProject((GLdouble)vtemp->x, (GLdouble)vtemp->y, (GLdouble)vtemp->z,
-				modelview_matrix, projection_matrix, viewport, &tx, &ty, &dummy);
-			tx = tx / win_width;
-			ty = ty / win_height;
-			glTexCoord2f(tx, ty);
-			glVertex3d(vtemp->x, vtemp->y, vtemp->z);
-		}
-		glEnd();
-	}
-	glDisable(GL_TEXTURE_2D);
-	glDisable(GL_BLEND);
-	glShadeModel(GL_SMOOTH);
-}
 
 /******************************************************************************
 Callback function for scene display
@@ -818,12 +485,7 @@ void display(void)
 	set_scene(GL_RENDER, poly);
 
 	/*display the mesh*/
-	display_polyhedron(poly);
-
-	/*display selected elements*/
-	display_selected_vertex(poly);
-	display_selected_quad(poly);
-
+	display_mesh(poly);
 
 	glFlush();
 	glutSwapBuffers();
@@ -836,7 +498,7 @@ void display(void)
 Diaplay the polygon with visualization results
 ******************************************************************************/
 
-void display_polyhedron(Polyhedron* poly)
+void display_mesh(Mesh* poly)
 {
 	unsigned int i, j;
 
@@ -847,6 +509,31 @@ void display_polyhedron(Polyhedron* poly)
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 	glShadeModel(GL_SMOOTH);
 
+	glEnable(GL_LIGHTING);
+	glEnable(GL_LIGHT0);
+	glEnable(GL_LIGHT1);
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	GLfloat mat_diffuse[4] = { 0.24, 0.4, 0.47, 0.0 };
+	GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+	glMaterialf(GL_FRONT, GL_SHININESS, 50.0);
+
+	glBegin(GL_TRIANGLES);
+	glColor3f(0.5, 0.5, 0.5);
+	for (auto f : poly->flist) {
+		glNormal3d(f->normal.x, f->normal.y, f->normal.z);
+		for (int i = 0; i < 3; i++) {
+			glVertex3d(f->verts[i]->x, f->verts[i]->y, f->verts[i]->z);
+		}
+
+	}
+
+	glEnd();
+
+
+	/*
 	switch (display_mode)
 	{
 	case 1:	// solid color display with lighting
@@ -902,81 +589,12 @@ void display_polyhedron(Polyhedron* poly)
 	}
 	break;
 
-	case 3:	// checkerboard pattern display
-	{
-		glDisable(GL_LIGHTING);
-		for (int i = 0; i < poly->nquads; i++) {
-			Quad* temp_q = poly->qlist[i];
-			glBegin(GL_POLYGON);
-			for (int j = 0; j < 4; j++) {
-				Vertex* temp_v = temp_q->verts[j];
-				glColor3f(temp_v->R, temp_v->G, temp_v->B);
-				glVertex3d(temp_v->x, temp_v->y, temp_v->z);
-			}
-			glEnd();
-		}
-	}
-	break;
-
-	case 4: // points and lines drawing example
-	{
-		glEnable(GL_LIGHTING);
-		glEnable(GL_LIGHT0);
-		glEnable(GL_LIGHT1);
-
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		GLfloat mat_diffuse[4] = { 0.24, 0.4, 0.47, 0.0 };
-		GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
-		glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
-		glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
-		glMaterialf(GL_FRONT, GL_SHININESS, 50.0);
-
-		for (int i = 0; i < poly->nquads; i++) {
-			Quad* temp_q = poly->qlist[i];
-			glBegin(GL_POLYGON);
-			for (int j = 0; j < 4; j++) {
-				Vertex* temp_v = temp_q->verts[j];
-				glNormal3d(temp_v->normal.entry[0], temp_v->normal.entry[1], temp_v->normal.entry[2]);
-				glVertex3d(temp_v->x, temp_v->y, temp_v->z);
-			}
-			glEnd();
-		}
-
-		// draw lines
-		for (int k = 0; k < lines.size(); k++)
-		{
-			drawPolyLine(lines[k], 1.0, 1.0, 0.0, 0.0);
-		}
-
-		// draw points
-		for (int k = 0; k < points.size(); k++)
-		{
-			icVector3 point = points[k];
-			drawDot(point.x, point.y, point.z);
-		}
-		break;
-	}
-	break;
-
-	case 5:	// IBFV vector field display
-	{
-		displayIBFV();
-		glutPostRedisplay();
-	}
-	break;
-
-	case 6: // add your own display mode
-	{
-		
-		// your code goes here
-
-	}
-	break;
-
 	default:
 	{
 		// don't draw anything
 	}
 
 	}
+
+	*/
 }

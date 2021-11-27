@@ -132,12 +132,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="learnply.cpp" />
-    <ClCompile Include="ply.cpp">
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
-      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">EnableFastChecks</BasicRuntimeChecks>
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">MaxSpeed</Optimization>
-    </ClCompile>
-    <ClCompile Include="polyhedron.cpp" />
+    <ClCompile Include="mesh.cpp" />
     <ClCompile Include="tmatrix.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">EnableFastChecks</BasicRuntimeChecks>
@@ -154,9 +149,8 @@
     <ClInclude Include="glError.h" />
     <ClInclude Include="icMatrix.H" />
     <ClInclude Include="icVector.H" />
-    <ClInclude Include="ply_io.h" />
-    <ClInclude Include="ply.h" />
-    <ClInclude Include="polyhedron.h" />
+    <ClInclude Include="mesh.h" />
+    <ClInclude Include="natural_sort.hpp" />
     <ClInclude Include="polyline.h" />
     <ClInclude Include="tmatrix.h" />
     <ClInclude Include="trackball.h" />
