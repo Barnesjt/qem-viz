@@ -98,8 +98,7 @@ std::vector<std::string> get_all_obj_in_folder(std::string folder);
 Main program.
 ******************************************************************************/
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]) {
 	//Get all ply files in directory
 	all_obj_files = get_all_obj_in_folder(OBJ_PATH);
 
@@ -114,8 +113,7 @@ int main(int argc, char* argv[])
 	//if no ply files, then exit with error. otherwise set the first ply
 	if (all_meshes.empty()) {
 		return 1;
-	}
-	else {
+	} else {
 		mesh = all_meshes.at(0);
 		curr_mesh = 0;
 	}
@@ -152,8 +150,7 @@ Get all .obj files
 Function adapted from: https://stackoverflow.com/a/20847429
 ******************************************************************************/
 // Function adapted from: https://stackoverflow.com/a/20847429
-std::vector<std::string> get_all_obj_in_folder(std::string folder)
-{
+std::vector<std::string> get_all_obj_in_folder(std::string folder) {
 	std::vector<std::string> names;
 	std::string search_path = folder + "/*.obj";
 	WIN32_FIND_DATA fd;
@@ -177,12 +174,10 @@ Use glut to display a string of characters using a raster font
 Borrowed from CS450 Sample Code
 ******************************************************************************/
 void
-DoRasterString(float x, float y, float z, char* s)
-{
+DoRasterString(float x, float y, float z, char* s) {
 	glRasterPos3f((GLfloat)x, (GLfloat)y, (GLfloat)z);
 	char c;			// one character to print
-	for (; (c = *s) != '\0'; s++)
-	{
+	for (; (c = *s) != '\0'; s++) {
 		glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24, c);
 	}
 }
@@ -205,8 +200,7 @@ string dispModeString(int mode) {
 Set projection mode
 ******************************************************************************/
 
-void set_view(GLenum mode)
-{
+void set_view(GLenum mode) {
 	GLfloat light_ambient0[] = { 0.3, 0.3, 0.3, 1.0 };
 	GLfloat light_diffuse0[] = { 0.7, 0.7, 0.7, 1.0 };
 	GLfloat light_specular0[] = { 0.0, 0.0, 0.0, 1.0 };
@@ -258,8 +252,7 @@ void set_view(GLenum mode)
 Update the scene
 ******************************************************************************/
 
-void set_scene(GLenum mode, Mesh* mesh)
-{
+void set_scene(GLenum mode, Mesh* mesh){
 	glTranslatef(translation[0], translation[1], -3.0);
 
 	/*multiply rotmat to current mat*/
@@ -315,8 +308,6 @@ Process a keyboard action.  In particular, exit the program when an
 ******************************************************************************/
 
 void keyboard(unsigned char key, int x, int y) {
-	int i;
-
 
 	switch (key) {
 	case 27:	// set excape key to exit program
@@ -457,8 +448,7 @@ void mousewheel(int wheel, int direction, int x, int y) {
 Callback function for window reshaping
 ******************************************************************************/
 
-void reshape(int width, int height)
-{
+void reshape(int width, int height) {
 	win_width = width;
 	win_height = height;
 
@@ -474,8 +464,7 @@ void reshape(int width, int height)
 Callback function for scene display
 ******************************************************************************/
 
-void display(void)
-{
+void display(void) {
 	glClearColor(1.0, 1.0, 1.0, 1.0);  // background for rendering color coding and lighting
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -497,9 +486,7 @@ void display(void)
 Diaplay the polygon with visualization results
 ******************************************************************************/
 
-void display_mesh(Mesh* mesh)
-{
-	unsigned int i, j;
+void display_mesh(Mesh* mesh) {
 
 	glEnable(GL_POLYGON_OFFSET_FILL);
 	glPolygonOffset(1., 1.);
