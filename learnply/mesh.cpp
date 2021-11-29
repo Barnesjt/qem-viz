@@ -12,18 +12,22 @@
 #include <vector>
 #include <algorithm>
 
+#include <Eigen/Dense>
+
+using namespace Eigen;
+
+
 // delimiters for parsing the obj file:
 
 #define OBJDELIMS		" \t"
 
 char* ReadRestOfLine(FILE*);
 void ReadObjVTN(char*, int*, int*, int*);
-void Cross(double[3], double[3], double[3]);
-double Unit(double[3]);
-double Unit(double[3], double[3]);
+void mjbCross(double[3], double[3], double[3]);
+double mjbUnit(double[3]);
+double mjbUnit(double[3], double[3]);
 
-struct face
-{
+struct face {
 	int v, n, t;
 };
 
@@ -42,6 +46,7 @@ Mesh::Mesh(char* file) {
 
 	std::vector <Vertex*> Vertices;
 	std::vector <Face*> Faces;
+	std::vector <Edge*> Edges;
 
 	Vertices.clear();
 	Faces.clear();
@@ -89,7 +94,9 @@ Mesh::Mesh(char* file) {
 				str = strtok(NULL, OBJDELIMS);
 				double z = atof(str);
 
-				Vertices.push_back(new Vertex(x, y, z));
+				Vertex* newVert = new Vertex(x, y, z);
+
+				Vertices.push_back(newVert);
 
 				if (x < xmin) xmin = x;
 				if (x > xmax) xmax = x;
@@ -173,9 +180,62 @@ Mesh::Mesh(char* file) {
 					v02[0] = v2->x - v0->x;
 					v02[1] = v2->y - v0->y;
 					v02[2] = v2->z - v0->z;
-					Cross(v01, v02, norm);
-					Unit(norm, norm);
-					Faces.push_back(new Face(v0, v1, v2, icVector3(norm)));
+					mjbCross(v01, v02, norm);
+					mjbUnit(norm, norm);
+
+					Face* newFace = new Face(v0, v1, v2, icVector3(norm));
+					Edge* e01 = NULL;
+					Edge* e12 = NULL;
+					Edge* e20 = NULL;
+
+					for (auto e : Edges) {
+						if ((e->verts[0] == v0 && e->verts[1] == v1) || (e->verts[1] == v0 && e->verts[0] == v1))
+							e01 = e;
+						if ((e->verts[0] == v1 && e->verts[1] == v2) || (e->verts[1] == v1 && e->verts[0] == v2))
+							e12 = e;
+						if ((e->verts[0] == v2 && e->verts[1] == v0) || (e->verts[1] == v2 && e->verts[0] == v0))
+							e20 = e;
+					}
+
+					if (e01 == NULL) {
+						e01 = new Edge(v0, v1, this);
+						Edges.push_back(e01);
+					}
+					if (e12 == NULL) { 
+						e12 = new Edge(v1, v2, this);
+						Edges.push_back(e12);
+					}
+					if (e20 == NULL) {
+						e20 = new Edge(v2, v0, this);
+						Edges.push_back(e20);
+					}
+
+					v0->mesh = this;
+					v1->mesh = this;
+					v2->mesh = this;
+
+					v0->edges.push_back(e01);
+					v0->edges.push_back(e20);
+					v1->edges.push_back(e01);
+					v1->edges.push_back(e12);
+					v2->edges.push_back(e12);
+					v2->edges.push_back(e20);
+
+					v0->faces.push_back(newFace);
+					v1->faces.push_back(newFace);
+					v2->faces.push_back(newFace);
+
+					e01->faces.push_back(newFace);
+					e12->faces.push_back(newFace);
+					e20->faces.push_back(newFace);
+
+					newFace->edges[0] = e01;
+					newFace->edges[1] = e12;
+					newFace->edges[2] = e20;
+
+					newFace->mesh = this;
+
+					Faces.push_back(newFace);
 				}
 				continue;
 			}
@@ -291,7 +351,7 @@ void ReadObjVTN(char* str, int* v, int* t, int* n){
 	}
 }
 
-void Cross(double v1[3], double v2[3], double vout[3]) {
+void mjbCross(double v1[3], double v2[3], double vout[3]) {
 
 	double tmp[3];
 
@@ -304,7 +364,7 @@ void Cross(double v1[3], double v2[3], double vout[3]) {
 	vout[2] = tmp[2];
 }
 
-double Unit(double v[3]) {
+double mjbUnit(double v[3]) {
 	double dist = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 
 	if (dist > 0.0) {
@@ -317,7 +377,7 @@ double Unit(double v[3]) {
 	return dist;
 }
 
-double Unit(double vin[3], double vout[3]) {
+double mjbUnit(double vin[3], double vout[3]) {
 	double dist = vin[0] * vin[0] + vin[1] * vin[1] + vin[2] * vin[2];
 
 	if (dist > 0.0) {

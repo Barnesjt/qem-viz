@@ -47,6 +47,8 @@ Input OBJ files should be added to data/geometry/ prior to launching the executa
    - CS450 http://web.engr.oregonstate.edu/~mjb/cs550/loadobjfile.cpp
 - Learnply base project:
    - Oregon State University CS553 (Scientific Visualization)
+- Eigen library (for matrix types and operations):
+   - https://eigen.tuxfamily.org/index.php?title=Main_Page
 
 # References
 
