@@ -11,10 +11,7 @@
 
 #include <vector>
 #include <algorithm>
-
-#include <Eigen/Dense>
-
-using namespace Eigen;
+#include <queue>
 
 
 // delimiters for parsing the obj file:
@@ -251,6 +248,7 @@ Mesh::Mesh(char* file) {
 		orientation = 0;
 		flist = Faces;
 		vlist = Vertices;
+		elist = Edges;
 		center = icVector3((xmin + xmax)/2., (ymin + ymax)/2., (zmin + zmax)/2.);
 		radius = std::max({ abs(center.x - xmax), abs(center.y - ymax), abs(center.z - zmax) });
 
@@ -268,12 +266,17 @@ Mesh::Mesh() {
 
 }
 
-void Mesh::initialize() {
+void Mesh::initialize(double maxDistForPairs) {
 	//set orientation to clockwise (CW). Used for normals for lighting
 	orientation = 0;
+	maxFaces = flist.size();
 	//set indexes for vlist and flist, not strictly required, but may be convienient later
 	for (int i = 0; i < flist.size(); i++) flist.at(i)->index = i;
 	for (int i = 0; i < vlist.size(); i++) vlist.at(i)->index = i;
+	for (int i = 0; i < elist.size(); i++) elist.at(i)->index = i;
+	//some initializing for QEM mesh simplification
+	seedValidPairs(maxDistForPairs);
+	seedInitialQuadrics();
 }
 
 void Mesh::finalize() {
@@ -287,6 +290,209 @@ void Mesh::finalize() {
 		vlist.clear();
 	}
 
+}
+
+void Mesh::seedValidPairs(double t) {
+	//Pair is valid if the verts make an edge
+	for (auto e : elist) {
+		validPairs.push_back(new Pair( e->verts[0], e->verts[1], e));
+	}
+	//Pair is valid if the verts their distance is less than t
+	for (auto v0 : vlist) {
+		for (auto v1 : vlist) {
+			if (v0->distance(v1) < t && !v0->makesEdgeWith(v1)) {
+				validPairs.push_back(new Pair(v0, v1));
+			}
+		}
+	}
+}
+
+void Mesh::seedInitialQuadrics() {
+	for (auto f : flist) {
+		f->calcQuadric();
+		for (int i = 0; i < 3; i++) {
+			f->verts[i]->Q += f->Quadric;
+		}
+	}
+}
+
+void Mesh::simplify(int target) {
+	if (target > flist.size() || target < 4) return;
+
+	typedef std::priority_queue<Pair*, std::vector<Pair*>, PairComparison> ErrorQueue;
+	ErrorQueue pairError;
+
+	for (int i = 0; i < validPairs.size(); i++) {
+		validPairs.at(i)->index = i;
+		pairError.push(validPairs.at(i));
+	}
+	std::sort(validPairs.begin(), validPairs.end(), [](Pair* a, Pair* b) {return a->Error < b->Error; });
+
+	while (flist.size() > target) {
+
+		Pair* p = validPairs.front();
+
+		if (p->edge != NULL) {
+
+			icVector3 newVert = p->Vector();
+			Vertex* v0 = p->v0;
+			Vertex* v1 = p->v1;
+
+			Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
+			vBar->mesh = v0->mesh;
+			vBar->index = v0->index;
+			vBar->Q = v0->Q;
+			for (int i = 0; i < flist.size(); i++) {
+				flist.at(i)->index = i;
+			}
+			Face* f1 = NULL;
+			Face* f2 = NULL;
+			for (auto f : v0->faces) {
+				for (int i = 0; i < 3; i++) {
+					if (f->edges[0] == p->edge) {
+						if (f1 == NULL) {
+							f1 = f;
+							this->flist.erase(this->flist.begin() + f->index);
+						} else if (f2 == NULL) {
+							f2 = f;
+							this->flist.erase(this->flist.begin() + f->index);
+						}
+					}
+
+					if (f->verts[i] == v0 || f->verts[i] == v1)
+						f->verts[i] = vBar;
+
+				}
+			}
+
+			//perform edge contraction
+
+			/*
+			Mesh:
+				Edge from elist
+				Remove redundant Vertex from vlist
+				Remove 2x faces from flist
+				Remove pair from validPairs
+
+			Face:
+				Delete 2x faces
+				All adjacent faces Need to be updated:
+					One of the verts for each Face is moved (recompute normal? and Quadric?)
+					The other edges from deleted faces are now shared, remove redundancies?
+			
+			Edge:
+				Some edges now overlap
+
+			Vertex:
+
+			Pair:
+			
+			*/
+
+
+		} else {
+			//perform non-edge contraction
+			icVector3 newVert = p->Vector();
+			Vertex* v0 = p->v0;
+			Vertex* v1 = p->v1;
+			Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
+			vBar->mesh = v0->mesh;
+			vBar->index = v0->index;
+			vBar->Q = v0->Q;
+
+			for (auto f : v0->faces) {
+				for (int i = 0; i < 3; i++) {
+					if (f->verts[i] == v0)
+						f->verts[i] = vBar;
+				}
+			}
+
+			for (auto f : v1->faces) {
+				for (int i = 0; i < 3; i++) {
+					if (f->verts[i] == v1)
+						f->verts[i] = vBar;
+				}
+			}
+
+		}
+		validPairs.erase(validPairs.begin());
+
+	}
+}
+
+double Vertex::distance(Vertex * v1) {
+	Vertex* v0 = this;
+	double dist = sqrt(pow(v1->x-v0->x, 2.)+ pow(v1->y - v0->y, 2.)+ pow(v1->z - v0->z, 2.));
+	return dist;
+}
+
+bool Vertex::makesEdgeWith(Vertex* v1) {
+	Vertex* v0 = this;
+	//If they are the same, then they do not make an edge
+	if (v0 == v1) return false;
+	//for all edges, if v1 is not one of the verts, return false
+	for (auto e : v0->edges) {
+		if (e->verts[0] == v1 || e->verts[1] == v0) return true;
+	}
+	return false;
+}
+
+void Face::calcQuadric() {
+	Vertex* v1 = verts[0];
+	Vertex* v2 = verts[1];
+	Vertex* v3 = verts[2];
+
+	double x = v1->x;
+	double y = v1->y;
+	double z = v1->z;
+
+	double a = normal.x;
+	double b = normal.y;
+	double c = normal.z;
+	double d = -a * x - b * y - c * z;
+
+	Quadric = Mat4x4(a*a, a*b, a*c, a*d, a*b, b*b, b*c, b*d, a*c, b*c, c*c, c*d, a*d, b*d, c*d, d*d);
+}
+
+void Pair::updateQuadric() {
+	Quadric = Mat4x4(0.);
+	Quadric += v0->Q;
+	Quadric += v1->Q;
+}
+
+icVector3 Pair::QuadricVector() {
+	updateQuadric();
+	Mat4x4 q = Quadric;
+	Mat4x4 qB = { q.at(0,0), q.at(0,1), q.at(0,2), q.at(0,3), q.at(1,0), q.at(1,1), q.at(1,2), q.at(1,3), q.at(2,0), q.at(2,1), q.at(2,2), q.at(2,3), 0., 0., 0., 1. };
+	qB = qB.inverse();
+	return icVector3(qB.at(0, 3), qB.at(1, 3), qB.at(2, 3));
+}
+
+icVector3 Pair::Vector() {
+	updateQuadric();
+	Mat4x4 q = Quadric;
+	if (abs(q.determinant()) > .001) {
+		return QuadricVector();
+	}
+	//if cannot be computed from matrix, look along edge
+	//For now this is just halfway along the edge 
+	//TODO: Fix
+	return icVector3((v0->x + v1->x) / 2., (v0->y + v1->y) / 2, (v0->z + v1->z) / 2.);
+}
+
+double Pair::QuadricError(icVector3 v) {
+	updateQuadric();
+	Mat4x4 q = Quadric;
+	return 
+		(v.x * q.at(0,0) * v.x + v.y * q.at(1,0) * v.x + v.z * q.at(2,0) * v.x + q.at(3,0) * v.x +
+		v.x * q.at(0,1) * v.y + v.y * q.at(1,1) * v.y + v.z * q.at(2,1) * v.y + q.at(3,1) * v.y +
+		v.x * q.at(0,2) * v.z + v.y * q.at(1,2) * v.z + v.z * q.at(2,2) * v.z + q.at(3,2) * v.z +
+		v.x * q.at(0,3) + v.y * q.at(1,3) + v.z * q.at(2,3) + q.at(3,3));
+}
+
+void Pair::updateError() {
+	//could be cached and updated as needed, but we'll just calc it in full each time for now
+	Error = QuadricError(QuadricVector());
 }
 
 char* ReadRestOfLine(FILE* fp){

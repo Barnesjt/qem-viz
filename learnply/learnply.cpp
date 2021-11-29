@@ -40,6 +40,8 @@ vector<Mesh*> all_meshes;
 //The marker for which ply we're looking at, used to index into the vectors and cycle through them
 int curr_mesh = 0;
 int face_target = 0;
+double t_ratio = 100.;
+bool view_error = false;
 
 string OBJ_PATH = "../data/geometry/";
 
@@ -107,7 +109,7 @@ int main(int argc, char* argv[]) {
 
 	for (std::string i : all_obj_files) {
 		all_meshes.push_back(new Mesh(const_cast<char*>((OBJ_PATH + i).c_str())));
-		all_meshes.back()->initialize();
+		all_meshes.back()->initialize(all_meshes.back()->radius/t_ratio);
 	}
 
 	//if no ply files, then exit with error. otherwise set the first ply
@@ -116,6 +118,7 @@ int main(int argc, char* argv[]) {
 	} else {
 		mesh = all_meshes.at(0);
 		curr_mesh = 0;
+		face_target = mesh->flist.size();
 	}
 
 	/*init glut and create window*/
@@ -315,13 +318,27 @@ void keyboard(unsigned char key, int x, int y) {
 		exit(0);
 		break;
 
-	case '1':	// solid obj display
-		display_mode = 1;
+	case 'q':
+		int newFaceTarget;
+		std::cout << "Input New Face Target: ";
+		std::cin >> newFaceTarget;
+		if (newFaceTarget < 4) std::cout << "Too few faces, press 'q' to try again";
+		else if (newFaceTarget > mesh->maxFaces) std::cout << "Too many faces, press 'q' to try again";
+		else face_target = newFaceTarget;
+
+		if (face_target > mesh->flist.size()) {
+			all_meshes.at(curr_mesh) = new Mesh(const_cast<char*>((OBJ_PATH + all_obj_files.at(curr_mesh)).c_str()));
+			mesh = all_meshes.at(curr_mesh);
+			mesh->initialize(mesh->radius / t_ratio);
+		}
+		if (face_target < mesh->flist.size()){
+			mesh->simplify(face_target);
+		}
 		glutPostRedisplay();
 		break;
 
-	case '2':	// solid obj w/ ellipsoids
-		display_mode = 2;
+	case 'e':
+		view_error = !view_error;
 		glutPostRedisplay();
 		break;
 
@@ -339,6 +356,8 @@ void keyboard(unsigned char key, int x, int y) {
 
 		//reset the poly we are displaying, w/ min and max
 		mesh = all_meshes.at(curr_mesh);
+
+		face_target = mesh->flist.size();
 
 		//recall keyboard function to make sure the correct display mode is set
 		keyboard('0' + display_mode, x, y);
@@ -364,7 +383,7 @@ void motion(int x, int y) {
 	switch (mouse_mode) {
 	case 2:
 
-		Quaternion rvec;
+		float rvec[4];
 
 		mat_to_quat(rotmat, rvec);
 		trackball(r, s_old, t_old, s, t);
