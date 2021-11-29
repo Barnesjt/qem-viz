@@ -36,6 +36,8 @@ public:
 	vector <Face*> flist;
 	vector <Vertex*> vlist;
 	unsigned char orientation; //0=ccw, 1=cw
+	icVector3 center;
+	double radius;
 
 public:
 

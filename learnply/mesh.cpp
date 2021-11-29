@@ -10,6 +10,7 @@
 #include "mesh.h"
 
 #include <vector>
+#include <algorithm>
 
 // delimiters for parsing the obj file:
 
@@ -31,6 +32,13 @@ Mesh::Mesh(char* file) {
 
 	char* cmd;		// the command string
 	char* str;		// argument string
+
+	double xmin = std::numeric_limits<double>::max();
+	double ymin = std::numeric_limits<double>::max();
+	double zmin = std::numeric_limits<double>::max();
+	double xmax = std::numeric_limits<double>::min();
+	double ymax = std::numeric_limits<double>::min();
+	double zmax = std::numeric_limits<double>::min();
 
 	std::vector <Vertex*> Vertices;
 	std::vector <Face*> Faces;
@@ -82,6 +90,13 @@ Mesh::Mesh(char* file) {
 				double z = atof(str);
 
 				Vertices.push_back(new Vertex(x, y, z));
+
+				if (x < xmin) xmin = x;
+				if (x > xmax) xmax = x;
+				if (y < ymin) ymin = y;
+				if (y > ymax) ymax = y;
+				if (z < zmin) zmin = z;
+				if (z > zmax) zmax = z;
 
 				continue;
 			}
@@ -176,6 +191,8 @@ Mesh::Mesh(char* file) {
 		orientation = 0;
 		flist = Faces;
 		vlist = Vertices;
+		center = icVector3((xmin + xmax)/2., (ymin + ymax)/2., (zmin + zmax)/2.);
+		radius = std::max({ abs(center.x - xmax), abs(center.y - ymax), abs(center.z - zmax) });
 
 		fclose(fp);
 
@@ -185,7 +202,10 @@ Mesh::Mesh(char* file) {
 
 
 Mesh::Mesh() {
-	//default constructor
+	orientation = 0;
+	center = icVector3(0, 0, 0);
+	radius = 1.0;
+
 }
 
 void Mesh::initialize() {

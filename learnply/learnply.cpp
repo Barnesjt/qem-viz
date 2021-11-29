@@ -99,10 +99,10 @@ Main program.
 ******************************************************************************/
 
 int main(int argc, char* argv[]) {
-	//Get all ply files in directory
+	//Get all obj files in directory
 	all_obj_files = get_all_obj_in_folder(OBJ_PATH);
 
-	//Natural sorting of ply files
+	//Natural sorting of obj files
 	std::sort(all_obj_files.begin(), all_obj_files.end(), SI::natural::compare<string>);
 
 	for (std::string i : all_obj_files) {
@@ -268,11 +268,11 @@ void set_scene(GLenum mode, Mesh* mesh){
 		glMultMatrixf(mat);
 	}
 
-	glScalef(0.9, 0.9, 0.9);
-	glTranslatef(0.0, 0.0, 0.0);
+	//glScalef(0.9, 0.9, 0.9);
+	//glTranslatef(0.0, 0.0, 0.0);
 
-	//glScalef(0.9 / poly->radius, 0.9 / poly->radius, 0.9 / poly->radius);
-	//glTranslatef(-poly->center.entry[0], -poly->center.entry[1], -poly->center.entry[2]);
+	glScalef(0.9 / mesh->radius, 0.9 / mesh->radius, 0.9 / mesh->radius);
+	glTranslatef(-mesh->center.entry[0], -mesh->center.entry[1], -mesh->center.entry[2]);
 }
 
 /******************************************************************************
