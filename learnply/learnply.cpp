@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
 
 	//if no ply files, then exit with error. otherwise set the first ply
 	if (all_meshes.empty()) {
-		return 1;
+		return 0; //no meshes, no program
 	} else {
 		mesh = all_meshes.at(0);
 		curr_mesh = 0;

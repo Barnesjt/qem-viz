@@ -251,17 +251,7 @@ Mesh::Mesh(char* file) {
 		radius = std::max({ abs(center.x - xmax), abs(center.y - ymax), abs(center.z - zmax) });
 
 		fclose(fp);
-
 	}
-
-}
-
-
-Mesh::Mesh() {
-	orientation = 0;
-	center = icVector3(0, 0, 0);
-	radius = 1.0;
-
 }
 
 void Mesh::initialize(double maxDistForPairs) {
@@ -273,20 +263,20 @@ void Mesh::initialize(double maxDistForPairs) {
 	for (int i = 0; i < vlist.size(); i++) vlist.at(i)->index = i;
 	for (int i = 0; i < elist.size(); i++) elist.at(i)->index = i;
 	//some initializing for QEM mesh simplification
-	seedValidPairs(maxDistForPairs);
 	seedInitialQuadrics();
+	seedValidPairs(maxDistForPairs);
+	
 }
 
 void Mesh::finalize() {
-	for (auto f : flist) {
-		free(f->verts);
-		free(f);
-		flist.clear();
-	}
-	for (auto v : vlist) {
-		free(v);
-		vlist.clear();
-	}
+	for (auto f : flist) free(f->verts);
+	flist.clear();
+	for (auto v : vlist) free(v);
+	vlist.clear();
+	for (auto e : elist) free(e);
+	elist.clear();
+	for (auto p : validPairs) free(p);
+	validPairs.clear();
 
 }
 
@@ -298,18 +288,26 @@ void Mesh::seedValidPairs(double t) {
 	//Pair is valid if the verts their distance is less than t
 	for (auto v0 : vlist) {
 		for (auto v1 : vlist) {
-			if (v0->distance(v1) < t && !v0->makesEdgeWith(v1)) {
+			if (v0 != v1 && !v0->makesEdgeWith(v1) && v0->distance(v1) < t) {
 				validPairs.push_back(new Pair(v0, v1));
 			}
 		}
+	}
+	for (auto p : validPairs) {
+		p->updateError();
 	}
 }
 
 void Mesh::seedInitialQuadrics() {
 	for (auto f : flist) {
 		f->calcQuadric();
-		for (int i = 0; i < 3; i++) {
-			f->verts[i]->Q += f->Quadric;
+		//for (int i = 0; i < 3; i++) {
+		//	f->verts[i]->Q += f->Quadric;
+		//}
+	}
+	for (auto v : vlist) {
+		for (auto f : v->faces) {
+			v->Q += f->Quadric;
 		}
 	}
 }
@@ -317,18 +315,19 @@ void Mesh::seedInitialQuadrics() {
 void Mesh::simplify(int target) {
 	if (target > flist.size() || target < 4) return;
 
-	typedef std::priority_queue<Pair*, std::vector<Pair*>, PairComparison> ErrorQueue;
-	ErrorQueue pairError;
-
 	for (int i = 0; i < validPairs.size(); i++) {
 		validPairs.at(i)->index = i;
-		pairError.push(validPairs.at(i));
 	}
+
 	std::sort(validPairs.begin(), validPairs.end(), [](Pair* a, Pair* b) {return a->Error < b->Error; });
 
 	while (flist.size() > target) {
 
 		Pair* p = validPairs.front();
+
+		for (int i = 0; i < flist.size(); i++) {
+			flist.at(i)->index = i;
+		}
 
 		if (p->edge != NULL) {
 
@@ -346,22 +345,34 @@ void Mesh::simplify(int target) {
 			Face* f1 = NULL;
 			Face* f2 = NULL;
 			for (auto f : v0->faces) {
+				bool correctFace = false;
 				for (int i = 0; i < 3; i++) {
-					if (f->edges[0] == p->edge) {
-						if (f1 == NULL) {
-							f1 = f;
-							this->flist.erase(this->flist.begin() + f->index);
-						} else if (f2 == NULL) {
-							f2 = f;
-							this->flist.erase(this->flist.begin() + f->index);
-						}
+					if (f->edges[i] == p->edge) {
+						correctFace = true;
+						if (f->verts[i] == v0 || f->verts[i] == v1) f->verts[i] = vBar;
 					}
-
-					if (f->verts[i] == v0 || f->verts[i] == v1)
-						f->verts[i] = vBar;
-
+				}
+				if(correctFace) {
+					if (f1 == NULL) f1 = f;
+					else if (f2 == NULL) f2 = f;	
 				}
 			}
+			std::vector<Face*>::iterator pos1 = std::find(flist.begin(), flist.end(), f1);
+			if (pos1 != flist.end()) {
+				//Other things to fix when removing face?
+				this->flist.erase(pos1);
+			} else {
+				int g = 2;
+			}
+			std::vector<Face*>::iterator pos2 = std::find(flist.begin(), flist.end(), f2);
+			if (pos2 != flist.end()) {
+				//Other things to fix when removing face?
+				this->flist.erase(pos2);
+			} else {
+				int g = 2;
+			}
+
+
 
 			//perform edge contraction
 
@@ -480,7 +491,6 @@ icVector3 Pair::Vector() {
 }
 
 double Pair::QuadricError(icVector3 v) {
-	updateQuadric();
 	glm::mat4x4 q = Quadric;
 	return 
 		(v.x * q[0][0] * v.x + v.y * q[1][0] * v.x + v.z * q[2][0] * v.x + q[3][0] * v.x +

@@ -25,7 +25,7 @@ public:
 	double x, y, z;
 	int index;
 
-	glm::dmat4x4 Q;
+	glm::mat4x4 Q = glm::mat4x4(0.);
 	Mesh* mesh;
 	vector <Face*> faces;
 	vector <Edge*> edges;
@@ -54,7 +54,7 @@ public:
 	Edge* edges[3];
 	Mesh* mesh;
 
-	glm::dmat4x4 Quadric;
+	glm::mat4x4 Quadric = glm::mat4x4(0.);
 	icVector3 normal;
 	int index;
 
@@ -69,7 +69,7 @@ public:
 	Vertex* v1;
 	Edge* edge = NULL;
 	int index;
-	glm::dmat4x4 Quadric;
+	glm::mat4x4 Quadric = glm::mat4x4(0.);
 	double Error;
 
 public:
@@ -82,21 +82,6 @@ public:
 	icVector3 QuadricVector();
 	double QuadricError(icVector3 v);
 
-};
-
-class PairComparison
-{
-	bool reverse;
-public:
-	PairComparison(const bool& revparam = false)
-	{
-		reverse = revparam;
-	}
-	bool operator() ( Pair* lhs, Pair* rhs)
-	{
-		if (reverse) return (lhs->Error > rhs->Error);
-		else return (lhs->Error < rhs->Error);
-	}
 };
 
 class Mesh {
@@ -115,7 +100,6 @@ public:
 public:
 
 	/*constructors*/
-	Mesh();
 	Mesh(char*);
 
 	/*utilties*/
