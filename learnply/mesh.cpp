@@ -21,14 +21,14 @@ void ReadObjVTN(char*, int*, int*, int*);
 void mjbCross(double[3], double[3], double[3]);
 double mjbUnit(double[3]);
 double mjbUnit(double[3], double[3]);
+double mjbDot(double v1[3], double v2[3]);
 
 struct face {
 	int v, n, t;
 };
 
-
+//constructs a Mesh from obj file, adapted from Bailey's 450/550
 Mesh::Mesh(char* file) {
-
 	char* cmd;		// the command string
 	char* str;		// argument string
 
@@ -42,33 +42,25 @@ Mesh::Mesh(char* file) {
 	std::vector <Vertex*> Vertices;
 	std::vector <Face*> Faces;
 	std::vector <Edge*> Edges;
-
 	Vertices.clear();
 	Faces.clear();
 
 	// open the input file:
-
 	FILE* fp = fopen(file, "r");
-	if (fp == NULL) {
-		fprintf(stderr, "Cannot open .obj file '%s'\n", file);
-	}
+	if (fp == NULL) fprintf(stderr, "Cannot open .obj file '%s'\n", file);
 	else {
 		for (; ; ) {
 			char* line = ReadRestOfLine(fp);
-			if (line == NULL)
-				break;
+			if (line == NULL) break;
 
 			// skip this line if it is a comment:
-			if (line[0] == '#')
-				continue;
+			if (line[0] == '#') continue;
 
 			// skip this line if it is something we don't feel like handling today:
-			if (line[0] == 'g' || line[0] == 'm' || line[0] == 's' || line[0] == 'u')
-				continue;
+			if (line[0] == 'g' || line[0] == 'm' || line[0] == 's' || line[0] == 'u') continue;
 
 			// get the command string:
 			cmd = strtok(line, OBJDELIMS);
-
 
 			// skip this line if it is empty:
 			if (cmd == NULL) continue;
@@ -103,11 +95,9 @@ Mesh::Mesh(char* file) {
 				continue;
 			}
 
-			if (strcmp(cmd, "f") == 0)
-			{
+			if (strcmp(cmd, "f") == 0) {
 				struct face vertices[10];
-				for (int i = 0; i < 10; i++)
-				{
+				for (int i = 0; i < 10; i++) {
 					vertices[i].v = 0;
 					vertices[i].n = 0;
 					vertices[i].t = 0;
@@ -119,33 +109,24 @@ Mesh::Mesh(char* file) {
 				bool valid = true;
 				int vtx = 0;
 				char* str;
-				while ((str = strtok(NULL, OBJDELIMS)) != NULL)
-				{
+				while ((str = strtok(NULL, OBJDELIMS)) != NULL) {
 					int v, n, t;
 					ReadObjVTN(str, &v, &t, &n);
 
 					// if v, n, or t are negative, they are wrt the end of their respective list:
-
-					if (v < 0)
-						v += (sizev + 1);
+					if (v < 0) v += (sizev + 1);
 
 					// be sure we are not out-of-bounds (<vector> will abort):
-
-					if (v > sizev)
-					{
-						if (v != 0)
-							fprintf(stderr, "Read vertex coord %d, but only have %d so far\n", v, sizev);
+					if (v > sizev) {
+						if (v != 0) fprintf(stderr, "Read vertex coord %d, but only have %d so far\n", v, sizev);
 						v = 0;
 						valid = false;
 					}
 
 					vertices[vtx].v = v;
-					//vertices[vtx].n = n;
-					//vertices[vtx].t = t;
 					vtx++;
 
-					if (vtx >= 10)
-						break;
+					if (vtx >= 10) break;
 
 					numVertices++;
 				}
@@ -259,17 +240,16 @@ void Mesh::initialize(double maxDistForPairs) {
 	orientation = 0;
 	maxFaces = flist.size();
 	//set indexes for vlist and flist, not strictly required, but may be convienient later
-	for (int i = 0; i < flist.size(); i++) flist.at(i)->index = i;
-	for (int i = 0; i < vlist.size(); i++) vlist.at(i)->index = i;
-	for (int i = 0; i < elist.size(); i++) elist.at(i)->index = i;
+	for (unsigned int i = 0; i < flist.size(); i++) flist.at(i)->index = i;
+	for (unsigned int i = 0; i < vlist.size(); i++) vlist.at(i)->index = i;
+	for (unsigned int i = 0; i < elist.size(); i++) elist.at(i)->index = i;
 	//some initializing for QEM mesh simplification
 	seedInitialQuadrics();
 	seedValidPairs(maxDistForPairs);
-	
 }
 
 void Mesh::finalize() {
-	for (auto f : flist) free(f->verts);
+	for (auto f : flist) free(f);
 	flist.clear();
 	for (auto v : vlist) free(v);
 	vlist.clear();
@@ -283,28 +263,27 @@ void Mesh::finalize() {
 void Mesh::seedValidPairs(double t) {
 	//Pair is valid if the verts make an edge
 	for (auto e : elist) {
-		validPairs.push_back(new Pair( e->verts[0], e->verts[1], e));
+		Pair* p = new Pair(e->verts[0], e->verts[1], e);
+		e->verts[0]->pairs.push_back(p);
+		e->verts[1]->pairs.push_back(p);
+		validPairs.push_back(p);
 	}
 	//Pair is valid if the verts their distance is less than t
 	for (auto v0 : vlist) {
 		for (auto v1 : vlist) {
 			if (v0 != v1 && !v0->makesEdgeWith(v1) && v0->distance(v1) < t) {
-				validPairs.push_back(new Pair(v0, v1));
+				Pair* p = new Pair(v0, v1);
+				v0->pairs.push_back(p);
+				v1->pairs.push_back(p);
+				validPairs.push_back(p);
 			}
 		}
 	}
-	for (auto p : validPairs) {
-		p->updateError();
-	}
+	for (auto p : validPairs) p->updateError();
 }
 
 void Mesh::seedInitialQuadrics() {
-	for (auto f : flist) {
-		f->calcQuadric();
-		//for (int i = 0; i < 3; i++) {
-		//	f->verts[i]->Q += f->Quadric;
-		//}
-	}
+	for (auto f : flist) f->calcQuadric();
 	for (auto v : vlist) {
 		for (auto f : v->faces) {
 			v->Q += f->Quadric;
@@ -312,120 +291,142 @@ void Mesh::seedInitialQuadrics() {
 	}
 }
 
-void Mesh::simplify(int target) {
-	if (target > flist.size() || target < 4) return;
+void Mesh::nonEdgeContract(Pair* target) {
+	//just remove the pair for now (ignore)
+	//from validPairs: target
+	auto ipvalidPairs = std::find(validPairs.begin(), validPairs.end(), target);
+	if (ipvalidPairs != validPairs.end()) validPairs.erase(ipvalidPairs);
 
-	for (int i = 0; i < validPairs.size(); i++) {
-		validPairs.at(i)->index = i;
+}
+
+void Mesh::edgeContract(Pair* target) {
+
+	//current problem @ face target 5785 on cow
+		//set 5786 and enable breakpoint to examime
+
+	icVector3 newVert = target->Vector();
+	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
+	Vertex* remV0 = target->v0;
+	Vertex* remV1 = target->v1;
+	Edge* remE = target->edge;
+	Face* remF0 = remE->faces.at(0);
+	Face* remF1 = NULL;
+	if (remE->faces.size() > 1)
+		remF1 = remE->faces.at(1);
+	Edge* remEF0a = NULL;
+	Edge* remEF0b = NULL;
+	Edge* remEF1a = NULL;
+	Edge* remEF1b = NULL;
+
+	//find the 4 edges for the faces that will be removed
+	for (int i = 0; i < 3; i++) {
+		if (remF0->edges[i] != remE) {
+			if (remEF0a == NULL) remEF0a = remF0->edges[i];
+			else remEF0b = remF0->edges[i];
+		}
+		if (remE->faces.size() > 1 && remF1->edges[i] != remE) {
+			if (remEF1a == NULL) remEF1a = remF1->edges[i];
+			else remEF1b = remF1->edges[i];
+		}
 	}
 
-	std::sort(validPairs.begin(), validPairs.end(), [](Pair* a, Pair* b) {return a->Error < b->Error; });
+	//combine the face lists for each
+	remEF0a->faces.insert(remEF0a->faces.end(), remEF0b->faces.begin(), remEF0b->faces.end());
+	if (remE->faces.size() > 1)
+		remEF1a->faces.insert(remEF1a->faces.end(), remEF1b->faces.begin(), remEF1b->faces.end());
+	//also remove the faces that will be cut
+	remEF0a->faces.erase(std::remove(remEF0a->faces.begin(), remEF0a->faces.end(), remF0), remEF0a->faces.end());
+	remEF1a->faces.erase(std::remove(remEF1a->faces.begin(), remEF1a->faces.end(), remF1), remEF1a->faces.end());
+
+	//now combine the 2 verticies face lists
+	vBar->faces.insert(vBar->faces.end(), remV0->faces.begin(), remV0->faces.end());
+	vBar->faces.insert(vBar->faces.end(), remV1->faces.begin(), remV1->faces.end());
+
+	//also remove the faces that will be cut
+	vBar->faces.erase(std::remove(vBar->faces.begin(), vBar->faces.end(), remF0), vBar->faces.end());
+	vBar->faces.erase(std::remove(vBar->faces.begin(), vBar->faces.end(), remF1), vBar->faces.end());
+
+
+	//next combine the 2 verticies pair lists
+	vBar->pairs.insert(vBar->pairs.end(), remV0->pairs.begin(), remV0->pairs.end());
+	vBar->pairs.insert(vBar->pairs.end(), remV1->pairs.begin(), remV1->pairs.end());
+	//and remove pair that will be cut
+	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), target), vBar->pairs.end());
+
+
+	//for all the faces, replace v0 and v1 with vBar
+	//and if edge is remEF0b or remEF1b, replace with remEF0a or remEF0a
+	for (auto f : vBar->faces) {
+		for (int i = 0; i < 3; i++) {
+			if (f->verts[i] == remV0 || f->verts[i] == remV1){
+				f->verts[i] = vBar;
+			}
+			if (f->edges[i] == remEF0b) {
+				f->edges[i] = remEF0a;
+			} else if (remE->faces.size() > 1 && f->edges[i] == remEF1b) {
+				f->edges[i] = remEF1a;
+			}
+		}
+		//now calc new normal, and new Quadric for each face
+		f->calcNormal();
+		f->calcQuadric();
+	}
+	//calc new Q for each vertex on those faces
+	for (auto f : vBar->faces) {
+		for (int i = 0; i < 3; i++) {
+			auto v = f->verts[i];
+			v->Q = glm::mat4x4(0.0);
+			for (auto vF : v->faces) {
+				v->Q += vF->Quadric;
+			}
+			//for each vert, loop through it's pairs and update
+			for (auto p : v->pairs) {
+				p->updateError();
+			}
+		}
+	}
+
+	//add new vert
+	vlist.push_back(vBar);
+
+	//remove degenerate geometry from Mesh lists: flist, elist, vlist, validPairs
+	//from flist: remF0 remF1
+	flist.erase(std::remove(flist.begin(), flist.end(), remF0), flist.end());
+	if(remE->faces.size() > 1)
+		flist.erase(std::remove(flist.begin(), flist.end(), remF1), flist.end());
+
+	//from vlist: remV0 remV1
+	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV0), vlist.end());
+	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV1), vlist.end());
+
+	//from elist: remE remEF0b remEF1b
+	elist.erase(std::remove(elist.begin(), elist.end(), remE), elist.end());
+	elist.erase(std::remove(elist.begin(), elist.end(), remEF0b), elist.end());
+	elist.erase(std::remove(elist.begin(), elist.end(), remEF1b), elist.end());
+
+	//from validPairs: target
+	validPairs.erase(std::remove(validPairs.begin(), validPairs.end(), target), validPairs.end());
+
+}
+
+void Mesh::simplify(unsigned int target) {
+	//don't perform simplify if target is too small
+	if (target < 4) return;
 
 	while (flist.size() > target) {
+		//sort validPairs based on error cost
+		std::sort(validPairs.begin(), validPairs.end(), [](Pair* a, Pair* b) {return a->Error < b->Error; });
 
+		//take the best candidate
 		Pair* p = validPairs.front();
 
-		for (int i = 0; i < flist.size(); i++) {
-			flist.at(i)->index = i;
-		}
-
+		//if it's an edge do edge contraction, otherwise non-edge contraction
 		if (p->edge != NULL) {
-
-			icVector3 newVert = p->Vector();
-			Vertex* v0 = p->v0;
-			Vertex* v1 = p->v1;
-
-			Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
-			vBar->mesh = v0->mesh;
-			vBar->index = v0->index;
-			vBar->Q = v0->Q;
-			for (int i = 0; i < flist.size(); i++) {
-				flist.at(i)->index = i;
-			}
-			Face* f1 = NULL;
-			Face* f2 = NULL;
-			for (auto f : v0->faces) {
-				bool correctFace = false;
-				for (int i = 0; i < 3; i++) {
-					if (f->edges[i] == p->edge) {
-						correctFace = true;
-						if (f->verts[i] == v0 || f->verts[i] == v1) f->verts[i] = vBar;
-					}
-				}
-				if(correctFace) {
-					if (f1 == NULL) f1 = f;
-					else if (f2 == NULL) f2 = f;	
-				}
-			}
-			std::vector<Face*>::iterator pos1 = std::find(flist.begin(), flist.end(), f1);
-			if (pos1 != flist.end()) {
-				//Other things to fix when removing face?
-				this->flist.erase(pos1);
-			} else {
-				int g = 2;
-			}
-			std::vector<Face*>::iterator pos2 = std::find(flist.begin(), flist.end(), f2);
-			if (pos2 != flist.end()) {
-				//Other things to fix when removing face?
-				this->flist.erase(pos2);
-			} else {
-				int g = 2;
-			}
-
-
-
-			//perform edge contraction
-
-			/*
-			Mesh:
-				Edge from elist
-				Remove redundant Vertex from vlist
-				Remove 2x faces from flist
-				Remove pair from validPairs
-
-			Face:
-				Delete 2x faces
-				All adjacent faces Need to be updated:
-					One of the verts for each Face is moved (recompute normal? and Quadric?)
-					The other edges from deleted faces are now shared, remove redundancies?
-			
-			Edge:
-				Some edges now overlap
-
-			Vertex:
-
-			Pair:
-			
-			*/
-
-
+			edgeContract(p);
 		} else {
+			nonEdgeContract(p);
 			//perform non-edge contraction
-			icVector3 newVert = p->Vector();
-			Vertex* v0 = p->v0;
-			Vertex* v1 = p->v1;
-			Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
-			vBar->mesh = v0->mesh;
-			vBar->index = v0->index;
-			vBar->Q = v0->Q;
-
-			for (auto f : v0->faces) {
-				for (int i = 0; i < 3; i++) {
-					if (f->verts[i] == v0)
-						f->verts[i] = vBar;
-				}
-			}
-
-			for (auto f : v1->faces) {
-				for (int i = 0; i < 3; i++) {
-					if (f->verts[i] == v1)
-						f->verts[i] = vBar;
-				}
-			}
-
 		}
-		validPairs.erase(validPairs.begin());
-
 	}
 }
 
@@ -461,6 +462,31 @@ void Face::calcQuadric() {
 	double d = -a * x - b * y - c * z;
 
 	Quadric = glm::mat4x4(a*a, a*b, a*c, a*d, a*b, b*b, b*c, b*d, a*c, b*c, c*c, c*d, a*d, b*d, c*d, d*d);
+}
+
+void Face::calcNormal() {
+	double v01[3], v02[3], norm[3];
+	v01[0] = verts[1]->x - verts[0]->x;
+	v01[1] = verts[1]->y - verts[0]->y;
+	v01[2] = verts[1]->z - verts[0]->z;
+	v02[0] = verts[2]->x - verts[0]->x;
+	v02[1] = verts[2]->y - verts[0]->y;
+	v02[2] = verts[2]->z - verts[0]->z;
+
+	mjbCross(v01, v02, norm);
+	mjbUnit(norm, norm);
+	double oldNorm[3] = { normal.x, normal.y, normal.z };
+	double dot = mjbDot(oldNorm, norm);
+	if (dot > 0.) {
+		normal.x = norm[0];
+		normal.y = norm[1];
+		normal.z = norm[2];
+	} else {
+		normal.x = norm[0] * -1.;
+		normal.y = norm[1] * -1.;
+		normal.z = norm[2] * -1.;
+	}
+	
 }
 
 void Pair::updateQuadric() {
@@ -500,7 +526,6 @@ double Pair::QuadricError(icVector3 v) {
 }
 
 void Pair::updateError() {
-	//could be cached and updated as needed, but we'll just calc it in full each time for now
 	Error = QuadricError(QuadricVector());
 }
 
@@ -508,72 +533,50 @@ char* ReadRestOfLine(FILE* fp){
 	static char* line;
 	std::vector<char> tmp(1000);
 	tmp.clear();
-
-	for (; ; )
-	{
+	for (; ; ) {
 		int c = getc(fp);
+		if (c == EOF && tmp.size() == 0) return NULL;
 
-		if (c == EOF && tmp.size() == 0)
-		{
-			return NULL;
-		}
-
-		if (c == EOF || c == '\n')
-		{
+		if (c == EOF || c == '\n') {
 			delete[] line;
 			line = new char[tmp.size() + 1];
-			for (int i = 0; i < (int)tmp.size(); i++)
-			{
-				line[i] = tmp[i];
-			}
+			for (int i = 0; i < (int)tmp.size(); i++) line[i] = tmp[i];
 			line[tmp.size()] = '\0';	// terminating null
 			return line;
 		}
-		else
-		{
-			tmp.push_back(c);
-		}
+		else tmp.push_back(c);
 	}
-
 	return "";
 }
 
 void ReadObjVTN(char* str, int* v, int* t, int* n){
 	// can be one of v, v//n, v/t, v/t/n:
 
-	if (strstr(str, "//"))				// v//n
-	{
+	if (strstr(str, "//")) {			// v//n
 		*t = 0;
 		sscanf(str, "%d//%d", v, n);
 		return;
-	}
-	else if (sscanf(str, "%d/%d/%d", v, t, n) == 3)	// v/t/n
-	{
+	} else if (sscanf(str, "%d/%d/%d", v, t, n) == 3){	// v/t/n
 		return;
-	}
-	else
-	{
+	} else{
 		*n = 0;
-		if (sscanf(str, "%d/%d", v, t) == 2)		// v/t
-		{
-			return;
-		}
-		else						// v
-		{
+		if (sscanf(str, "%d/%d", v, t) == 2) return;		// v/t
+		else {						// v
 			*n = *t = 0;
 			sscanf(str, "%d", v);
 		}
 	}
 }
 
+double mjbDot(double v1[3], double v2[3]) {
+	return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
+}
+
 void mjbCross(double v1[3], double v2[3], double vout[3]) {
-
 	double tmp[3];
-
 	tmp[0] = v1[1] * v2[2] - v2[1] * v1[2];
 	tmp[1] = v2[0] * v1[2] - v1[0] * v2[2];
 	tmp[2] = v1[0] * v2[1] - v2[0] * v1[1];
-
 	vout[0] = tmp[0];
 	vout[1] = tmp[1];
 	vout[2] = tmp[2];
@@ -581,20 +584,17 @@ void mjbCross(double v1[3], double v2[3], double vout[3]) {
 
 double mjbUnit(double v[3]) {
 	double dist = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-
 	if (dist > 0.0) {
 		dist = sqrt(dist);
 		v[0] /= dist;
 		v[1] /= dist;
 		v[2] /= dist;
 	}
-
 	return dist;
 }
 
 double mjbUnit(double vin[3], double vout[3]) {
 	double dist = vin[0] * vin[0] + vin[1] * vin[1] + vin[2] * vin[2];
-
 	if (dist > 0.0) {
 		dist = sqrt(dist);
 		vout[0] = vin[0] / dist;
@@ -605,6 +605,5 @@ double mjbUnit(double vin[3], double vout[3]) {
 		vout[1] = vin[1];
 		vout[2] = vin[2];
 	}
-
 	return dist;
 }
