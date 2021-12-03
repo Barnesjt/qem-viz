@@ -2,8 +2,6 @@
 
 #include <math.h>
 #include <stdio.h>
-//#include <string.h>
-//#include <stdlib.h>
 #include <fstream>
 #include "icVector.H"
 #include "icMatrix.H"
@@ -451,27 +449,28 @@ void Face::calcQuadric() {
 	double c = normal.z;
 	double d = -a * x - b * y - c * z;
 
-	Quadric = Mat4x4(a*a, a*b, a*c, a*d, a*b, b*b, b*c, b*d, a*c, b*c, c*c, c*d, a*d, b*d, c*d, d*d);
+	Quadric = glm::mat4x4(a*a, a*b, a*c, a*d, a*b, b*b, b*c, b*d, a*c, b*c, c*c, c*d, a*d, b*d, c*d, d*d);
 }
 
 void Pair::updateQuadric() {
-	Quadric = Mat4x4(0.);
-	Quadric += v0->Q;
-	Quadric += v1->Q;
+	Quadric = v0->Q + v1->Q;
 }
 
 icVector3 Pair::QuadricVector() {
 	updateQuadric();
-	Mat4x4 q = Quadric;
-	Mat4x4 qB = { q.at(0,0), q.at(0,1), q.at(0,2), q.at(0,3), q.at(1,0), q.at(1,1), q.at(1,2), q.at(1,3), q.at(2,0), q.at(2,1), q.at(2,2), q.at(2,3), 0., 0., 0., 1. };
-	qB = qB.inverse();
-	return icVector3(qB.at(0, 3), qB.at(1, 3), qB.at(2, 3));
+	glm::mat4x4 q = Quadric;
+	q[3][0] = 0.;
+	q[3][1] = 0.;
+	q[3][2] = 0.; 
+	q[3][3] = 1.;
+	q = glm::inverse(q);
+	return icVector3(q[0][3], q[1][3], q[2][3]);
 }
 
 icVector3 Pair::Vector() {
 	updateQuadric();
-	Mat4x4 q = Quadric;
-	if (abs(q.determinant()) > .001) {
+	glm::mat4x4 q = Quadric;
+	if (abs(glm::determinant(q) > .001)) {
 		return QuadricVector();
 	}
 	//if cannot be computed from matrix, look along edge
@@ -482,12 +481,12 @@ icVector3 Pair::Vector() {
 
 double Pair::QuadricError(icVector3 v) {
 	updateQuadric();
-	Mat4x4 q = Quadric;
+	glm::mat4x4 q = Quadric;
 	return 
-		(v.x * q.at(0,0) * v.x + v.y * q.at(1,0) * v.x + v.z * q.at(2,0) * v.x + q.at(3,0) * v.x +
-		v.x * q.at(0,1) * v.y + v.y * q.at(1,1) * v.y + v.z * q.at(2,1) * v.y + q.at(3,1) * v.y +
-		v.x * q.at(0,2) * v.z + v.y * q.at(1,2) * v.z + v.z * q.at(2,2) * v.z + q.at(3,2) * v.z +
-		v.x * q.at(0,3) + v.y * q.at(1,3) + v.z * q.at(2,3) + q.at(3,3));
+		(v.x * q[0][0] * v.x + v.y * q[1][0] * v.x + v.z * q[2][0] * v.x + q[3][0] * v.x +
+		v.x * q[0][1] * v.y + v.y * q[1][1] * v.y + v.z * q[2][1] * v.y + q[3][1] * v.y +
+		v.x * q[0][2] * v.z + v.y * q[1][2] * v.z + v.z * q[2][2] * v.z + q[3][2] * v.z +
+		v.x * q[0][3] + v.y * q[1][3] + v.z * q[2][3] + q[3][3]);
 }
 
 void Pair::updateError() {
