@@ -10,6 +10,7 @@
 #include <vector>
 #include <algorithm>
 #include <queue>
+#include<set>
 
 
 // delimiters for parsing the obj file:
@@ -41,9 +42,8 @@ Mesh::Mesh(char* file) {
 
 	std::vector <Vertex*> Vertices;
 	std::vector <Face*> Faces;
-	std::vector <Edge*> Edges;
-	Vertices.clear();
-	Faces.clear();
+	//Vertices.clear();
+	//Faces.clear();
 
 	// open the input file:
 	FILE* fp = fopen(file, "r");
@@ -131,7 +131,7 @@ Mesh::Mesh(char* file) {
 					numVertices++;
 				}
 
-				// if vertices are invalid, don't draw anything this time:
+				// if vertices are invalid, don't save anything this time:
 				if (!valid || (numVertices < 3)) continue;
 
 				// list the vertices:
@@ -159,57 +159,25 @@ Mesh::Mesh(char* file) {
 					mjbCross(v01, v02, norm);
 					mjbUnit(norm, norm);
 
+					//create new face w/ calculated norm
 					Face* newFace = new Face(v0, v1, v2, icVector3(norm));
-					Edge* e01 = NULL;
-					Edge* e12 = NULL;
-					Edge* e20 = NULL;
 
-					for (auto e : Edges) {
-						if ((e->verts[0] == v0 && e->verts[1] == v1) || (e->verts[1] == v0 && e->verts[0] == v1))
-							e01 = e;
-						if ((e->verts[0] == v1 && e->verts[1] == v2) || (e->verts[1] == v1 && e->verts[0] == v2))
-							e12 = e;
-						if ((e->verts[0] == v2 && e->verts[1] == v0) || (e->verts[1] == v2 && e->verts[0] == v0))
-							e20 = e;
-					}
+					//add vertices as edges to the other vertices
+					v0->edges.push_back(v1);
+					v0->edges.push_back(v2);
+					v1->edges.push_back(v0);
+					v1->edges.push_back(v2);
+					v2->edges.push_back(v0);
+					v2->edges.push_back(v1);
 
-					if (e01 == NULL) {
-						e01 = new Edge(v0, v1, this);
-						Edges.push_back(e01);
-					}
-					if (e12 == NULL) { 
-						e12 = new Edge(v1, v2, this);
-						Edges.push_back(e12);
-					}
-					if (e20 == NULL) {
-						e20 = new Edge(v2, v0, this);
-						Edges.push_back(e20);
-					}
-
-					v0->mesh = this;
-					v1->mesh = this;
-					v2->mesh = this;
-
-					v0->edges.push_back(e01);
-					v0->edges.push_back(e20);
-					v1->edges.push_back(e01);
-					v1->edges.push_back(e12);
-					v2->edges.push_back(e12);
-					v2->edges.push_back(e20);
-
+					//save the new face to each vertex
 					v0->faces.push_back(newFace);
 					v1->faces.push_back(newFace);
 					v2->faces.push_back(newFace);
 
-					e01->faces.push_back(newFace);
-					e12->faces.push_back(newFace);
-					e20->faces.push_back(newFace);
-
-					newFace->edges[0] = e01;
-					newFace->edges[1] = e12;
-					newFace->edges[2] = e20;
-
-					newFace->mesh = this;
+					Vertices.push_back(v0);
+					Vertices.push_back(v1);
+					Vertices.push_back(v2);
 
 					Faces.push_back(newFace);
 				}
@@ -227,7 +195,6 @@ Mesh::Mesh(char* file) {
 		orientation = 0;
 		flist = Faces;
 		vlist = Vertices;
-		elist = Edges;
 		center = icVector3((xmin + xmax)/2., (ymin + ymax)/2., (zmin + zmax)/2.);
 		radius = std::max({ abs(center.x - xmax), abs(center.y - ymax), abs(center.z - zmax) });
 
@@ -239,46 +206,60 @@ void Mesh::initialize(double maxDistForPairs) {
 	//set orientation to clockwise (CW). Used for normals for lighting
 	orientation = 0;
 	maxFaces = flist.size();
-	//set indexes for vlist and flist, not strictly required, but may be convienient later
-	for (unsigned int i = 0; i < flist.size(); i++) flist.at(i)->index = i;
-	for (unsigned int i = 0; i < vlist.size(); i++) vlist.at(i)->index = i;
-	for (unsigned int i = 0; i < elist.size(); i++) elist.at(i)->index = i;
 	//some initializing for QEM mesh simplification
 	seedInitialQuadrics();
+
 	seedValidPairs(maxDistForPairs);
 }
 
 void Mesh::finalize() {
 	for (auto f : flist) free(f);
 	flist.clear();
-	for (auto v : vlist) free(v);
-	vlist.clear();
-	for (auto e : elist) free(e);
-	elist.clear();
 	for (auto p : validPairs) free(p);
 	validPairs.clear();
 
 }
 
 void Mesh::seedValidPairs(double t) {
+	
+	validPairs.clear();
+
+	std::vector<PairSimple*> pairs;
 	//Pair is valid if the verts make an edge
-	for (auto e : elist) {
-		Pair* p = new Pair(e->verts[0], e->verts[1], e);
-		e->verts[0]->pairs.push_back(p);
-		e->verts[1]->pairs.push_back(p);
-		validPairs.push_back(p);
+	for (auto f : flist) {
+		for (int i = 0; i < 3; i++) {
+			for (auto pe : f->verts[i]->edges) {
+				pairs.push_back(new PairSimple(f->verts[i], pe, true));
+			}
+		}
 	}
 	//Pair is valid if the verts their distance is less than t
 	for (auto v0 : vlist) {
 		for (auto v1 : vlist) {
 			if (v0 != v1 && !v0->makesEdgeWith(v1) && v0->distance(v1) < t) {
-				Pair* p = new Pair(v0, v1);
-				v0->pairs.push_back(p);
-				v1->pairs.push_back(p);
-				validPairs.push_back(p);
+				pairs.push_back(new PairSimple(v0, v1, false));
 			}
 		}
 	}
+	//Nasty O(n^2) to remove redundant pairs
+	for (auto p : pairs) {
+		bool unique = true;
+		for (auto psub : pairs) {
+			if (psub != p && ((psub->v0 == p->v0) && (psub->v1 == p->v1)) || ((psub->v0 == p->v1) && (psub->v1 == p->v0))) {
+				unique = false;
+				break;
+			}
+		}
+		if (unique) {
+			validPairs.push_back(new Pair(p->v0, p->v1, p->edge));
+			p->v0->pairs.push_back(p->v1);
+			p->v1->pairs.push_back(p->v0);
+		} else {
+			pairs.erase(std::remove(pairs.begin(), pairs.end(), p), pairs.end());
+		}
+		
+	}
+
 	for (auto p : validPairs) p->updateError();
 }
 
@@ -293,8 +274,6 @@ void Mesh::seedInitialQuadrics() {
 
 void Mesh::nonEdgeContract(Pair* target) {
 	//shouldn't get here when t == 0
-	//just remove the pair for now (ignore)
-	//from validPairs: target
 
 	icVector3 newVert = target->Vector();
 	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
@@ -305,13 +284,13 @@ void Mesh::nonEdgeContract(Pair* target) {
 	vBar->faces.insert(vBar->faces.end(), remV0->faces.begin(), remV0->faces.end());
 	vBar->faces.insert(vBar->faces.end(), remV1->faces.begin(), remV1->faces.end());
 
-
 	//next combine the 2 verticies pair lists
 	vBar->pairs.insert(vBar->pairs.end(), remV0->pairs.begin(), remV0->pairs.end());
 	vBar->pairs.insert(vBar->pairs.end(), remV1->pairs.begin(), remV1->pairs.end());
 
-	//and remove pair that will be cut
-	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), target), vBar->pairs.end());
+	//and remove pair that will be cut (any that are remV0 or remV1)
+	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), remV0), vBar->pairs.end());
+	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), remV1), vBar->pairs.end());
 
 	//for all the faces, replace v0 and v1 with vBar
 	for (auto f : vBar->faces) {
@@ -338,6 +317,7 @@ void Mesh::nonEdgeContract(Pair* target) {
 }
 
 //Called when edge only has 1 face it's attached to (Mesh has some open geometry)
+/*
 void Mesh::edge1fContract(Pair* target) {
 
 	icVector3 newVert = target->Vector();
@@ -426,6 +406,7 @@ void Mesh::edge1fContract(Pair* target) {
 	validPairs.erase(std::remove(validPairs.begin(), validPairs.end(), target), validPairs.end());
 
 }
+*/
 
 void Mesh::edge2fContract(Pair* target) {
 
@@ -436,95 +417,37 @@ void Mesh::edge2fContract(Pair* target) {
 	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
 	Vertex* remV0 = target->v0;
 	Vertex* remV1 = target->v1;
-	Edge* remE = target->edge;
-	Face* remF0 = remE->faces.at(0);
-	Face* remF1 = remE->faces.at(1);
-	Edge* remEF0a = NULL;
-	Edge* remEF0b = NULL;
-	Edge* remEF1a = NULL;
-	Edge* remEF1b = NULL;
+	Face* remF0 = NULL; // remE->faces.at(0); // remE->faces.at(1);
+	Face* remF1 = NULL;
 	Vertex* oppVertF0 = NULL;
 	Vertex* oppVertF1 = NULL;
-
-	//find the opposite vertex for F0 and F1
-	for (int i = 0; i < 3; i++) {
-		if (remF0->verts[i] != remV0 || remF0->verts[i] != remV1) oppVertF0 = remF0->verts[i];
-		if (remF1->verts[i] != remV0 || remF1->verts[i] != remV1) oppVertF1 = remF1->verts[i];
+	
+	//ugly code to get the pruned faces (should be 2) & opposite vertex
+	for (auto fv0 : remV0->faces) {
+		for (auto fv1 : remV1->faces) {
+			if (fv0 == fv1) {
+				for (int i = 0; i < 3; i++) {
+					if (fv0->verts[i] != remV0 && fv0->verts[i] != remV1) {
+						if (remF0 == NULL) {
+							remF0 = fv0;
+							oppVertF0 = fv0->verts[i];
+						}
+						else if (remF0 != NULL && fv0 != remF0) {
+							remF1 = fv0;
+							oppVertF1 = fv0->verts[i];
+						}
+					}
+				}
+			}
+		}
 	}
 
-	//find the 4 edges for the faces that will be removed
-	for (int i = 0; i < 3; i++) {
-		if (remF0->edges[i] != remE) {
-			if (remEF0a == NULL) remEF0a = remF0->edges[i];
-			else remEF0b = remF0->edges[i];
-		}
-		if (remF1->edges[i] != remE) {
-			if (remEF1a == NULL) remEF1a = remF1->edges[i];
-			else remEF1b = remF1->edges[i];
-		}
-	}
-
-	//make new edges
-	Edge* repEdgeF0 = new Edge(oppVertF0, vBar, this);
-	Edge* repEdgeF1 = new Edge(oppVertF0, vBar, this);
-
-	//in oppVertF0 remove F0, remEF0a, remEF0b. add repEdgeF0
+	//in oppVertF0 remove F0
 	oppVertF0->faces.erase(std::remove(oppVertF0->faces.begin(), oppVertF0->faces.end(), remF0), oppVertF0->faces.end());
-	oppVertF0->edges.erase(std::remove(oppVertF0->edges.begin(), oppVertF0->edges.end(), remEF0a), oppVertF0->edges.end());
-	oppVertF0->edges.erase(std::remove(oppVertF0->edges.begin(), oppVertF0->edges.end(), remEF0b), oppVertF0->edges.end());
-	oppVertF0->edges.push_back(repEdgeF0);
 
-	//in oppVertF1 remove remF1, remEF1a, remEF1b. Add repEdgeF1
+	//in oppVertF1 remove remF1
 	oppVertF1->faces.erase(std::remove(oppVertF1->faces.begin(), oppVertF1->faces.end(), remF1), oppVertF1->faces.end());
-	oppVertF1->edges.erase(std::remove(oppVertF1->edges.begin(), oppVertF1->edges.end(), remEF1a), oppVertF1->edges.end());
-	oppVertF1->edges.erase(std::remove(oppVertF1->edges.begin(), oppVertF1->edges.end(), remEF1b), oppVertF1->edges.end());
-	oppVertF0->edges.push_back(repEdgeF1);
 
-	//find the adjacent faces to f0 and f1, add those faces to the replacement edges, add the replacement edge to those faces
-	//bit redundant like this but...
-	for(auto f : remEF0a->faces){
-		if (f != remF0) {
-			repEdgeF0->faces.push_back(f);
-			for (int i = 0; i < 3; i++) {
-				if (f->edges[i] == remEF0a) f->edges[i] = repEdgeF0;
-			}
-		}
-	}
-	for (auto f : remEF0b->faces) {
-		if (f != remF0) {
-			repEdgeF0->faces.push_back(f);
-			for (int i = 0; i < 3; i++) {
-				if (f->edges[i] == remEF0b) f->edges[i] = repEdgeF0;
-			}
-		}
-	}
-	for (auto f : remEF1a->faces) {
-		if (f != remF1) {
-			repEdgeF1->faces.push_back(f);
-			for (int i = 0; i < 3; i++) {
-				if (f->edges[i] == remEF1a) f->edges[i] = repEdgeF1;
-			}
-		}
-	}
-	for (auto f : remEF1b->faces) {
-		if (f != remF1) {
-			repEdgeF1->faces.push_back(f);
-			for (int i = 0; i < 3; i++) {
-				if (f->edges[i] == remEF1b) f->edges[i] = repEdgeF1;
-			}
-		}
-	}
-
-
-
-
-	//combine the face lists for each
-	//remEF0a->faces.insert(remEF0a->faces.end(), remEF0b->faces.begin(), remEF0b->faces.end());
-	//remEF1a->faces.insert(remEF1a->faces.end(), remEF1b->faces.begin(), remEF1b->faces.end());
-
-	//also remove the faces that will be cut
-	//remEF0a->faces.erase(std::remove(remEF0a->faces.begin(), remEF0a->faces.end(), remF0), remEF0a->faces.end());
-	//remEF1a->faces.erase(std::remove(remEF1a->faces.begin(), remEF1a->faces.end(), remF1), remEF1a->faces.end());
 
 	//now combine the 2 verticies face lists
 	vBar->faces.insert(vBar->faces.end(), remV0->faces.begin(), remV0->faces.end());
@@ -539,16 +462,13 @@ void Mesh::edge2fContract(Pair* target) {
 	vBar->pairs.insert(vBar->pairs.end(), remV1->pairs.begin(), remV1->pairs.end());
 
 	//and remove pair that will be cut
-	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), target), vBar->pairs.end());
+	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), remV0), vBar->pairs.end());
+	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), remV1), vBar->pairs.end());
 
-	//for (int i = 0; i < 2; i++) {
-	//	if (remEF0a->verts[i] == remV0 || remEF0a->verts[i] == remV1) {
-	//		remEF0a->verts[i] == vBar;
-	//	}
-	//	if (remEF1a->verts[i] == remV0 || remEF1a->verts[i] == remV1) {
-	//		remEF1a->verts[i] == vBar;
-	//	}
-	//}
+
+	//////////////////////////////////////
+	//TODO?? Technically should fix edges for the verts, but I think this may not be needed.
+	//////////////////////////////////////
 
 	//for all the faces, replace v0 and v1 with vBar
 	//and if edge is remEF0b or remEF1b, replace with remEF0a or remEF0a
@@ -557,13 +477,11 @@ void Mesh::edge2fContract(Pair* target) {
 			if (f->verts[i] == remV0 || f->verts[i] == remV1){
 				f->verts[i] = vBar;
 			}
-			if (f->edges[i] == remEF0b) {
-				f->edges[i] = remEF0a;
-			} else if (f->edges[i] == remEF1b) {
-				f->edges[i] = remEF1a;
-			}
 		}
-		//now calc new normal, and new Quadric for each face
+		
+	}
+	//now calc new normal, and new Quadric for each face
+	for (auto f : vBar->faces) {
 		f->calcNormal();
 		f->calcQuadric();
 	}
@@ -576,18 +494,15 @@ void Mesh::edge2fContract(Pair* target) {
 				v->Q += vF->Quadric;
 			}
 			//for each vert, loop through it's pairs and update
-			for (auto p : v->pairs) {
-				p->updateError();
-			}
+			// Guess this needs to be done for the whole mesh now, whoops
+	//		for (auto p : v->pairs) {
+	//			p->updateError();
+	//		}
 		}
 	}
 
 	//add new vert
 	vlist.push_back(vBar);
-
-	//add new edge
-	elist.push_back(repEdgeF0);
-	elist.push_back(repEdgeF1);
 
 	//remove degenerate geometry from Mesh lists: flist, elist, vlist, validPairs
 	//from flist: remF0 remF1
@@ -598,15 +513,13 @@ void Mesh::edge2fContract(Pair* target) {
 	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV0), vlist.end());
 	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV1), vlist.end());
 
-	//from elist: remE remEF0b remEF1b
-	elist.erase(std::remove(elist.begin(), elist.end(), remE), elist.end());
-	elist.erase(std::remove(elist.begin(), elist.end(), remEF0a), elist.end());
-	elist.erase(std::remove(elist.begin(), elist.end(), remEF1a), elist.end());
-	elist.erase(std::remove(elist.begin(), elist.end(), remEF0b), elist.end());
-	elist.erase(std::remove(elist.begin(), elist.end(), remEF1b), elist.end());
-
 	//from validPairs: target
 	validPairs.erase(std::remove(validPairs.begin(), validPairs.end(), target), validPairs.end());
+
+	//now recomputed globally... I think that's ok.?
+	for (auto p : validPairs) {
+		p->updateError();
+	}
 
 }
 
@@ -623,13 +536,13 @@ void Mesh::simplify(unsigned int target) {
 		Pair* p = validPairs.front();
 
 		//if it's an edge do edge contraction, otherwise non-edge contraction
-		if (p->edge != NULL) {
-			if (p->edge->faces.size() == 2)
+		if (p->edge) {
+//			if (p->edge->faces.size() == 2)
 				edge2fContract(p);
-			else if (p->edge->faces.size() == 2)
-				edge1fContract(p);
-			else
-				int error = 0; // We have a problem
+//			else if (p->edge->faces.size() == 2)
+//				edge1fContract(p);
+//			else
+//				int error = 0; // We have a problem
 		} else {
 			nonEdgeContract(p);
 			//perform non-edge contraction
@@ -649,7 +562,7 @@ bool Vertex::makesEdgeWith(Vertex* v1) {
 	if (v0 == v1) return false;
 	//for all edges, if v1 is not one of the verts, return false
 	for (auto e : v0->edges) {
-		if (e->verts[0] == v1 || e->verts[1] == v0) return true;
+		if (e == v1) return true;
 	}
 	return false;
 }
@@ -693,7 +606,6 @@ void Face::calcNormal() {
 		normal.y = norm[1] * -1.;
 		normal.z = norm[2] * -1.;
 	}
-	
 }
 
 void Pair::updateQuadric() {
