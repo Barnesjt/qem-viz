@@ -141,6 +141,11 @@ public:
 		_mm_free(p);
 	}
 
+	bool operator < (const Pair& pair) const
+	{
+		return (Error < pair.Error);
+	}
+
 };
 
 class Mesh {
@@ -163,7 +168,8 @@ public:
 	/*utilties*/
 	void seedValidPairs(double maxDistForPairs);
 	void seedInitialQuadrics();
-	void edgeContract(Pair* target);
+	void edge2fContract(Pair* target);
+	void edge1fContract(Pair* target);
 	void nonEdgeContract(Pair* target);
 
 	/*initialization functions*/
