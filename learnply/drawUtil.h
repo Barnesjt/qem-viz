@@ -53,12 +53,12 @@ void drawLineSegment(LineSegment ls, double width = 1.0, float R = 0.0, float G 
 	glDisable(GL_LIGHTING);
 	glEnable(GL_LINE_SMOOTH);
 	glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-	glLineWidth(width);
+	glLineWidth((float)width);
 
 	glBegin(GL_LINES);
 	glColor3f(R, G, B);
-	glVertex3f(ls.start.x, ls.start.y, ls.start.z);
-	glVertex3f(ls.end.x, ls.end.y, ls.end.z);
+	glVertex3f((float)ls.start.x, (float)ls.start.y, (float)ls.start.z);
+	glVertex3f((float)ls.end.x, (float)ls.end.y, (float)ls.end.z);
 	glEnd();
 }
 
@@ -72,15 +72,15 @@ void drawPolyLine(PolyLine pl, double width = 1.0, float R = 0.0, float G = 0.0,
 	glDisable(GL_LIGHTING);
 	glEnable(GL_LINE_SMOOTH);
 	glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-	glLineWidth(width);
+	glLineWidth((float)width);
 
 	glBegin(GL_LINES);
 	glColor3f(R, G, B);
 
-	for (int i = 0; i < pl.size(); i++)
+	for (unsigned int i = 0; i < pl.size(); i++)
 	{
-		glVertex3f(pl[i].start.x, pl[i].start.y, pl[i].start.z);
-		glVertex3f(pl[i].end.x, pl[i].end.y, pl[i].end.z);
+		glVertex3f((float)pl[i].start.x, (float)pl[i].start.y, (float)pl[i].start.z);
+		glVertex3f((float)pl[i].end.x, (float)pl[i].end.y, (float)pl[i].end.z);
 	}
 	
 	glEnd();
@@ -98,7 +98,7 @@ void dots_and_lines_example(std::vector<icVector3>* points, std::vector<PolyLine
 		double y_quadratic = (double)x * (double)x / 10.0;
 		double y_cubic = (double)x * (double)x * (double)x / 100.0;
 
-		double x1 = x + 1;
+		double x1 = x + 1.;
 		double y1_linear = (double)x1;
 		double y1_quadratic = (double)x1 * (double)x1 / 10.0;
 		double y1_cubic = (double)x1 * (double)x1 * (double)x1 / 100.0;

@@ -38,31 +38,26 @@ vector<string> all_obj_files;
 vector<Mesh*> all_meshes;
 
 //The marker for which ply we're looking at, used to index into the vectors and cycle through them
-int curr_mesh = 0;
-int face_target = 0;
+unsigned int curr_mesh = 0;
+unsigned int face_target = 0;
+double t_ratio = 25.;
+bool view_error = false;
 
-string OBJ_PATH = "../data/geometry/";
+//To load all geometry use 
+//string OBJ_PATH = "../data/geometry/";
+
+string OBJ_PATH = "../data/geometry/cow/";
 
 Mesh* mesh;
 
 /*scene related variables*/
-const float zoomspeed = 0.9;
+const float zoomspeed = 0.9f;
 int win_width = 1024;
 int win_height = 1024;
-float aspectRatio = win_width / win_height;
+float aspectRatio = (float)win_width / (float)win_height;
 const int view_mode = 0;		// 0 = othogonal, 1=perspective
 const double radius_factor = 0.9;
 
-/*
-Use keys 1 to 0 to switch among different display modes.
-Each display mode can be designed to show one type 
-visualization result.
-
-Predefined ones: 
-display mode 1: solid rendering
-display mode 2: show wireframes
-display mode 3: render each quad with colors of vertices
-*/
 int display_mode = 1;
 
 /*User Interaction related variabes*/
@@ -99,23 +94,25 @@ Main program.
 ******************************************************************************/
 
 int main(int argc, char* argv[]) {
-	//Get all ply files in directory
+	//Get all obj files in directory
 	all_obj_files = get_all_obj_in_folder(OBJ_PATH);
 
-	//Natural sorting of ply files
+	//Natural sorting of obj files
 	std::sort(all_obj_files.begin(), all_obj_files.end(), SI::natural::compare<string>);
 
 	for (std::string i : all_obj_files) {
 		all_meshes.push_back(new Mesh(const_cast<char*>((OBJ_PATH + i).c_str())));
-		all_meshes.back()->initialize();
+		//all_meshes.back()->initialize(all_meshes.back()->radius/t_ratio);
+		all_meshes.back()->initialize(0.0);
 	}
 
 	//if no ply files, then exit with error. otherwise set the first ply
 	if (all_meshes.empty()) {
-		return 1;
+		return 0; //no meshes, no program
 	} else {
 		mesh = all_meshes.at(0);
 		curr_mesh = 0;
+		face_target = mesh->flist.size();
 	}
 
 	/*init glut and create window*/
@@ -201,13 +198,13 @@ Set projection mode
 ******************************************************************************/
 
 void set_view(GLenum mode) {
-	GLfloat light_ambient0[] = { 0.3, 0.3, 0.3, 1.0 };
-	GLfloat light_diffuse0[] = { 0.7, 0.7, 0.7, 1.0 };
-	GLfloat light_specular0[] = { 0.0, 0.0, 0.0, 1.0 };
+	GLfloat light_ambient0[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+	GLfloat light_diffuse0[] = { 0.7f, 0.7f, 0.7f, 1.0f };
+	GLfloat light_specular0[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-	GLfloat light_ambient1[] = { 0.0, 0.0, 0.0, 1.0 };
-	GLfloat light_diffuse1[] = { 0.5, 0.5, 0.5, 1.0 };
-	GLfloat light_specular1[] = { 0.0, 0.0, 0.0, 1.0 };
+	GLfloat light_ambient1[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	GLfloat light_diffuse1[] = { 0.5f, 0.5f, 0.5f, 1.0f };
+	GLfloat light_specular1[] = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 	glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient0);
 	glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse0);
@@ -238,13 +235,13 @@ void set_view(GLenum mode) {
 	GLfloat light_position[3];
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	light_position[0] = 5.5;
-	light_position[1] = 0.0;
-	light_position[2] = 0.0;
+	light_position[0] = 5.5f;
+	light_position[1] = 0.0f;
+	light_position[2] = 0.0f;
 	glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-	light_position[0] = -0.1;
-	light_position[1] = 0.0;
-	light_position[2] = 0.0;
+	light_position[0] = -0.1f;
+	light_position[1] = 0.0f;
+	light_position[2] = 0.0f;
 	glLightfv(GL_LIGHT2, GL_POSITION, light_position);
 }
 
@@ -253,7 +250,7 @@ Update the scene
 ******************************************************************************/
 
 void set_scene(GLenum mode, Mesh* mesh){
-	glTranslatef(translation[0], translation[1], -3.0);
+	glTranslatef((float)translation[0], (float)translation[1], -3.0f);
 
 	/*multiply rotmat to current mat*/
 	{
@@ -268,11 +265,11 @@ void set_scene(GLenum mode, Mesh* mesh){
 		glMultMatrixf(mat);
 	}
 
-	glScalef(0.9, 0.9, 0.9);
-	glTranslatef(0.0, 0.0, 0.0);
+	//glScalef(0.9, 0.9, 0.9);
+	//glTranslatef(0.0, 0.0, 0.0);
 
-	//glScalef(0.9 / poly->radius, 0.9 / poly->radius, 0.9 / poly->radius);
-	//glTranslatef(-poly->center.entry[0], -poly->center.entry[1], -poly->center.entry[2]);
+	glScalef(0.9f / (float)mesh->radius, 0.9f / (float)mesh->radius, 0.9f / (float)mesh->radius);
+	glTranslatef((float)-mesh->center.entry[0], (float)-mesh->center.entry[1], (float)-mesh->center.entry[2]);
 }
 
 /******************************************************************************
@@ -284,7 +281,7 @@ void init(void) {
 	mat_ident(rotmat);
 
 	/* select clearing color */
-	glClearColor(0.0, 0.0, 0.0, 0.0);  // background
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);  // background
 	glShadeModel(GL_FLAT);
 	glPolygonMode(GL_FRONT, GL_FILL);
 
@@ -315,13 +312,29 @@ void keyboard(unsigned char key, int x, int y) {
 		exit(0);
 		break;
 
-	case '1':	// solid obj display
-		display_mode = 1;
+	case 'q':
+		unsigned int newFaceTarget;
+		std::cout << "Input New Face Target: ";
+		std::cin >> newFaceTarget;
+		if (newFaceTarget < 4) std::cout << "Too few faces, press 'q' to try again";
+		else if (newFaceTarget > mesh->maxFaces) std::cout << "Too many faces, press 'q' to try again";
+		else face_target = newFaceTarget;
+
+		if (face_target > mesh->flist.size()) {
+			free(all_meshes.at(curr_mesh));
+			all_meshes.at(curr_mesh) = new Mesh(const_cast<char*>((OBJ_PATH + all_obj_files.at(curr_mesh)).c_str()));
+			mesh = all_meshes.at(curr_mesh);
+			//mesh->initialize(mesh->radius / t_ratio); //t=.01*radius
+			mesh->initialize(0.0); //edge contractions only: t=0.0
+		}
+		if (face_target < mesh->flist.size()){
+			mesh->simplify(face_target);
+		}
 		glutPostRedisplay();
 		break;
 
-	case '2':	// solid obj w/ ellipsoids
-		display_mode = 2;
+	case 'e':
+		view_error = !view_error;
 		glutPostRedisplay();
 		break;
 
@@ -340,6 +353,8 @@ void keyboard(unsigned char key, int x, int y) {
 		//reset the poly we are displaying, w/ min and max
 		mesh = all_meshes.at(curr_mesh);
 
+		face_target = mesh->flist.size();
+
 		//recall keyboard function to make sure the correct display mode is set
 		keyboard('0' + display_mode, x, y);
 		glutPostRedisplay();
@@ -355,8 +370,8 @@ void motion(int x, int y) {
 	float r[4];
 	float s, t;
 
-	s = (2.0 * x - win_width) / win_width;
-	t = (2.0 * (win_height - y) - win_height) / win_height;
+	s = (2.0f * (float)x - (float)win_width) / (float)win_width;
+	t = (2.0f * ((float)win_height - (float)y) - (float)win_height) / (float)win_height;
 
 	if ((s == s_old) && (t == t_old))
 		return;
@@ -364,7 +379,7 @@ void motion(int x, int y) {
 	switch (mouse_mode) {
 	case 2:
 
-		Quaternion rvec;
+		float rvec[4];
 
 		mat_to_quat(rotmat, rvec);
 		trackball(r, s_old, t_old, s, t);
@@ -379,8 +394,8 @@ void motion(int x, int y) {
 
 	case 1:
 
-		translation[0] += (s - s_old);
-		translation[1] += (t - t_old);
+		translation[0] += ((double)s - (double)s_old);
+		translation[1] += ((double)t - (double)t_old);
 
 		s_old = s;
 		t_old = t;
@@ -404,8 +419,8 @@ void mouse(int button, int state, int x, int y) {
 			float xsize = (float)win_width;
 			float ysize = (float)win_height;
 
-			float s = (2.0 * x - win_width) / win_width;
-			float t = (2.0 * (win_height - y) - win_height) / win_height;
+			float s = (2.0f * (float) x - (float)win_width) / (float)win_width;
+			float t = (2.0f * ((float)win_height - (float)y) - (float)win_height) / (float)win_height;
 
 			s_old = s;
 			t_old = t;
@@ -500,14 +515,14 @@ void display_mesh(Mesh* mesh) {
 	glEnable(GL_LIGHT1);
 
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-	GLfloat mat_diffuse[4] = { 0.24, 0.4, 0.47, 0.0 };
-	GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+	GLfloat mat_diffuse[4] = { 0.24f, 0.4f, 0.47f, 0.0f };
+	GLfloat mat_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
 	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
-	glMaterialf(GL_FRONT, GL_SHININESS, 50.0);
+	glMaterialf(GL_FRONT, GL_SHININESS, 50.0f);
 
 	glBegin(GL_TRIANGLES);
-	glColor3f(0.5, 0.5, 0.5);
+	glColor3f(0.5f, 0.5f, 0.5f);
 	for (auto f : mesh->flist) {
 		glNormal3d(f->normal.x, f->normal.y, f->normal.z);
 		for (int i = 0; i < 3; i++) {
@@ -518,69 +533,8 @@ void display_mesh(Mesh* mesh) {
 
 	glEnd();
 
-
-	/*
-	switch (display_mode)
-	{
-	case 1:	// solid color display with lighting
-	{
-		glEnable(GL_LIGHTING);
-		glEnable(GL_LIGHT0);
-		glEnable(GL_LIGHT1);
-
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		GLfloat mat_diffuse[4] = { 0.24, 0.4, 0.47, 0.0 };
-		GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
-		glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
-		glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
-		glMaterialf(GL_FRONT, GL_SHININESS, 50.0);
-
-		for (int i = 0; i < poly->nquads; i++) {
-			Quad* temp_q = poly->qlist[i];
-			glBegin(GL_POLYGON);
-			for (int j = 0; j < 4; j++) {
-				Vertex* temp_v = temp_q->verts[j];
-				glNormal3d(temp_v->normal.entry[0], temp_v->normal.entry[1], temp_v->normal.entry[2]);
-				glVertex3d(temp_v->x, temp_v->y, temp_v->z);
-			}
-			glEnd();
-		}
-	}
-	break;
-
-	case 2:	// wireframe display
-	{
-		glDisable(GL_LIGHTING);
-		glEnable(GL_LINE_SMOOTH);
-		glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-		glLineWidth(1.0);
-
-		for (int i = 0; i < poly->nquads; i++) {
-			Quad* temp_q = poly->qlist[i];
-
-			glBegin(GL_POLYGON);
-			for (int j = 0; j < 4; j++) {
-				Vertex* temp_v = temp_q->verts[j];
-				glNormal3d(temp_q->normal.entry[0], temp_q->normal.entry[1], temp_q->normal.entry[2]);
-				glColor3f(0.0, 0.0, 0.0);
-				glVertex3d(temp_v->x, temp_v->y, temp_v->z);
-			}
-			glEnd();
-		}
-
-		glDisable(GL_BLEND);
-	}
-	break;
-
-	default:
-	{
-		// don't draw anything
+	if (view_error) {
+		//draw ellipsoids
 	}
 
-	}
-
-	*/
 }
