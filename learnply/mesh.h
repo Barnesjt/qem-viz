@@ -148,6 +148,14 @@ public:
 
 };
 
+struct PairComp
+{
+	bool const operator()(Pair* lhs, Pair* rhs) const
+	{
+		return (*lhs) < (*rhs);
+	}
+};
+
 class Mesh {
 public:
 

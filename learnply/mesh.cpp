@@ -10,6 +10,7 @@
 #include <vector>
 #include <algorithm>
 #include <queue>
+#include <unordered_set>
 
 
 // delimiters for parsing the obj file:
@@ -27,7 +28,7 @@ struct face {
 	int v, n, t;
 };
 
-//constructs a Mesh from obj file, adapted from Bailey's 450/550
+//constructs a Mesh from obj file, adapted from Bailey's 450/550 loadobjfile.cpp
 Mesh::Mesh(char* file) {
 	char* cmd;		// the command string
 	char* str;		// argument string
@@ -44,6 +45,7 @@ Mesh::Mesh(char* file) {
 	std::vector <Edge*> Edges;
 	Vertices.clear();
 	Faces.clear();
+	Edges.clear();
 
 	// open the input file:
 	FILE* fp = fopen(file, "r");
@@ -81,8 +83,14 @@ Mesh::Mesh(char* file) {
 				str = strtok(NULL, OBJDELIMS);
 				double z = atof(str);
 
-				Vertex* newVert = new Vertex(x, y, z);
+				bool uniqueVert = true;
 
+				Vertex* newVert = NULL;
+
+				if (newVert == NULL) {
+					newVert = new Vertex(x, y, z);
+				}
+				
 				Vertices.push_back(newVert);
 
 				if (x < xmin) xmin = x;
@@ -217,14 +225,30 @@ Mesh::Mesh(char* file) {
 			}
 
 
-			if (strcmp(cmd, "s") == 0)
-			{
-				continue;
-			}
+			if (strcmp(cmd, "s") == 0) continue;
 
 		}
 
-		orientation = 0;
+		//Remove duplicates from vectors (not strictly needed, but seems like a good idea?)
+		std::unordered_set<Face*> sf;
+		for (auto f : Faces)
+			sf.insert(f);
+		Faces.assign(sf.begin(), sf.end());
+		std::sort(Faces.begin(), Faces.end());
+
+		std::unordered_set<Vertex*> sv;
+		for (auto v : Vertices)
+			sv.insert(v);
+		Vertices.assign(sv.begin(), sv.end());
+		std::sort(Vertices.begin(), Vertices.end());
+
+		std::unordered_set<Edge*> se;
+		for (auto e : Edges)
+			se.insert(e);
+		Edges.assign(se.begin(), se.end());
+		std::sort(Edges.begin(), Edges.end());
+
+		orientation = 0; //Clockwise
 		flist = Faces;
 		vlist = Vertices;
 		elist = Edges;
@@ -248,19 +272,24 @@ void Mesh::initialize(double maxDistForPairs) {
 	seedValidPairs(maxDistForPairs);
 }
 
-void Mesh::finalize() {
-	for (auto f : flist) free(f);
-	flist.clear();
-	for (auto v : vlist) free(v);
-	vlist.clear();
-	for (auto e : elist) free(e);
-	elist.clear();
-	for (auto p : validPairs) free(p);
-	validPairs.clear();
-
-}
+void Mesh::finalize() {}
 
 void Mesh::seedValidPairs(double t) {
+
+	//remove duplicates from edge list first
+	std::unordered_set<Edge*> se;
+	for (auto f : elist)
+		se.insert(f);
+	elist.assign(se.begin(), se.end());
+	std::sort(elist.begin(), elist.end()); //dunno if this is needed?
+
+	//also remove duplicates from vertex list
+	std::unordered_set<Vertex*> sv;
+	for (auto f : vlist)
+		sv.insert(f);
+	vlist.assign(sv.begin(), sv.end());
+	std::sort(vlist.begin(), vlist.end()); //dunno if this is needed?
+
 	//Pair is valid if the verts make an edge
 	for (auto e : elist) {
 		Pair* p = new Pair(e->verts[0], e->verts[1], e);
@@ -271,7 +300,7 @@ void Mesh::seedValidPairs(double t) {
 	//Pair is valid if the verts their distance is less than t
 	for (auto v0 : vlist) {
 		for (auto v1 : vlist) {
-			if (v0 != v1 && !v0->makesEdgeWith(v1) && v0->distance(v1) < t) {
+			if (v0 != v1 && ((v0->x != v1->x) && (v0->y != v1->y) && (v0->z != v1->z)) &&   !v0->makesEdgeWith(v1) && v0->distance(v1) < t) {
 				Pair* p = new Pair(v0, v1);
 				v0->pairs.push_back(p);
 				v1->pairs.push_back(p);
@@ -291,11 +320,9 @@ void Mesh::seedInitialQuadrics() {
 	}
 }
 
+//TODO: nonEdgeContract is current broken
+// Symptom: Face with 3 identical verts observed
 void Mesh::nonEdgeContract(Pair* target) {
-	//shouldn't get here when t == 0
-	//just remove the pair for now (ignore)
-	//from validPairs: target
-
 	icVector3 newVert = target->Vector();
 	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
 	Vertex* remV0 = target->v0;
@@ -305,10 +332,40 @@ void Mesh::nonEdgeContract(Pair* target) {
 	vBar->faces.insert(vBar->faces.end(), remV0->faces.begin(), remV0->faces.end());
 	vBar->faces.insert(vBar->faces.end(), remV1->faces.begin(), remV1->faces.end());
 
+	//remove dups
+	std::unordered_set<Face*> sf;
+	for (auto f : vBar->faces)
+		sf.insert(f);
+	vBar->faces.assign(sf.begin(), sf.end());
+	std::sort(vBar->faces.begin(), vBar->faces.end());
+
+	//now combine the 2 verticies edge lists
+	vBar->edges.insert(vBar->edges.end(), remV0->edges.begin(), remV0->edges.end());
+	vBar->edges.insert(vBar->edges.end(), remV1->edges.begin(), remV1->edges.end());
+
+	//remove dups
+	std::unordered_set<Edge*> se;
+	for (auto f : vBar->edges)
+		se.insert(f);
+	vBar->edges.assign(se.begin(), se.end());
+	std::sort(vBar->edges.begin(), vBar->edges.end());
 
 	//next combine the 2 verticies pair lists
 	vBar->pairs.insert(vBar->pairs.end(), remV0->pairs.begin(), remV0->pairs.end());
 	vBar->pairs.insert(vBar->pairs.end(), remV1->pairs.begin(), remV1->pairs.end());
+
+	//remove the dups
+	std::unordered_set<Pair*> sp;
+	for (auto f : vBar->pairs)
+		sp.insert(f);
+	vBar->pairs.assign(sp.begin(), sp.end());
+	std::sort(vBar->pairs.begin(), vBar->pairs.end());
+
+	//fix any pairs to point to the new vert
+	for (auto p : vBar->pairs) {
+		if (p->v0 == remV0 || p->v0 == remV1) p->v0 = vBar;
+		if (p->v1 == remV0 || p->v1 == remV1) p->v1 = vBar;
+	}
 
 	//and remove pair that will be cut
 	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), target), vBar->pairs.end());
@@ -337,9 +394,11 @@ void Mesh::nonEdgeContract(Pair* target) {
 
 }
 
+/*
+//I think we can skip this case (don't simplify edges at the open geometry)
 //Called when edge only has 1 face it's attached to (Mesh has some open geometry)
 void Mesh::edge1fContract(Pair* target) {
-
+	//I'd like to see if this runs
 	icVector3 newVert = target->Vector();
 	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
 	Vertex* remV0 = target->v0;
@@ -425,12 +484,9 @@ void Mesh::edge1fContract(Pair* target) {
 	//from validPairs: target
 	validPairs.erase(std::remove(validPairs.begin(), validPairs.end(), target), validPairs.end());
 
-}
+}*/
 
 void Mesh::edge2fContract(Pair* target) {
-
-	//current problem @ face target 5785 on cow
-		//set 5786 and enable breakpoint to examime
 
 	icVector3 newVert = target->Vector();
 	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
@@ -481,7 +537,6 @@ void Mesh::edge2fContract(Pair* target) {
 	oppVertF0->edges.push_back(repEdgeF1);
 
 	//find the adjacent faces to f0 and f1, add those faces to the replacement edges, add the replacement edge to those faces
-	//bit redundant like this but...
 	for(auto f : remEF0a->faces){
 		if (f != remF0) {
 			repEdgeF0->faces.push_back(f);
@@ -515,20 +570,27 @@ void Mesh::edge2fContract(Pair* target) {
 		}
 	}
 
-
-
-
-	//combine the face lists for each
-	//remEF0a->faces.insert(remEF0a->faces.end(), remEF0b->faces.begin(), remEF0b->faces.end());
-	//remEF1a->faces.insert(remEF1a->faces.end(), remEF1b->faces.begin(), remEF1b->faces.end());
-
-	//also remove the faces that will be cut
-	//remEF0a->faces.erase(std::remove(remEF0a->faces.begin(), remEF0a->faces.end(), remF0), remEF0a->faces.end());
-	//remEF1a->faces.erase(std::remove(remEF1a->faces.begin(), remEF1a->faces.end(), remF1), remEF1a->faces.end());
-
 	//now combine the 2 verticies face lists
 	vBar->faces.insert(vBar->faces.end(), remV0->faces.begin(), remV0->faces.end());
 	vBar->faces.insert(vBar->faces.end(), remV1->faces.begin(), remV1->faces.end());
+
+	//remove dups
+	std::unordered_set<Face*> sf;
+	for (auto f : vBar->faces)
+		sf.insert(f);
+	vBar->faces.assign(sf.begin(), sf.end());
+	std::sort(vBar->faces.begin(), vBar->faces.end());
+
+	//now combine the 2 verticies edge lists
+	vBar->edges.insert(vBar->edges.end(), remV0->edges.begin(), remV0->edges.end());
+	vBar->edges.insert(vBar->edges.end(), remV1->edges.begin(), remV1->edges.end());
+
+	//remove dups
+	std::unordered_set<Edge*> se;
+	for (auto f : vBar->edges)
+		se.insert(f);
+	vBar->edges.assign(se.begin(), se.end());
+	std::sort(vBar->edges.begin(), vBar->edges.end());
 
 	//also remove the faces that will be cut
 	vBar->faces.erase(std::remove(vBar->faces.begin(), vBar->faces.end(), remF0), vBar->faces.end());
@@ -538,17 +600,22 @@ void Mesh::edge2fContract(Pair* target) {
 	vBar->pairs.insert(vBar->pairs.end(), remV0->pairs.begin(), remV0->pairs.end());
 	vBar->pairs.insert(vBar->pairs.end(), remV1->pairs.begin(), remV1->pairs.end());
 
+	//remove the dups
+	std::unordered_set<Pair*> sp;
+	for (auto f : vBar->pairs)
+		sp.insert(f);
+	vBar->pairs.assign(sp.begin(), sp.end());
+	std::sort(vBar->pairs.begin(), vBar->pairs.end());
+
+	//fix any pairs to point to the new vert
+	for (auto p : vBar->pairs) {
+		if (p->v0 == remV0 || p->v0 == remV1) p->v0 = vBar;
+		if (p->v1 == remV0 || p->v1 == remV1) p->v1 = vBar;
+	}
+
 	//and remove pair that will be cut
 	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), target), vBar->pairs.end());
 
-	//for (int i = 0; i < 2; i++) {
-	//	if (remEF0a->verts[i] == remV0 || remEF0a->verts[i] == remV1) {
-	//		remEF0a->verts[i] == vBar;
-	//	}
-	//	if (remEF1a->verts[i] == remV0 || remEF1a->verts[i] == remV1) {
-	//		remEF1a->verts[i] == vBar;
-	//	}
-	//}
 
 	//for all the faces, replace v0 and v1 with vBar
 	//and if edge is remEF0b or remEF1b, replace with remEF0a or remEF0a
@@ -611,29 +678,22 @@ void Mesh::edge2fContract(Pair* target) {
 }
 
 void Mesh::simplify(unsigned int target) {
-
 	//don't perform simplify if target is too small
-	if (target < 4) return;
+	if (target < 64) return;
 
 	while (flist.size() > target) {
 		//sort validPairs based on error cost
-		std::sort(validPairs.begin(), validPairs.end());
-
+		std::sort(validPairs.begin(), validPairs.end(), PairComp());
+		
 		//take the best candidate
 		Pair* p = validPairs.front();
 
 		//if it's an edge do edge contraction, otherwise non-edge contraction
 		if (p->edge != NULL) {
-			if (p->edge->faces.size() == 2)
-				edge2fContract(p);
-			else if (p->edge->faces.size() == 2)
-				edge1fContract(p);
-			else
-				int error = 0; // We have a problem
-		} else {
-			nonEdgeContract(p);
-			//perform non-edge contraction
-		}
+			if (p->edge->faces.size() == 2) edge2fContract(p);
+			else validPairs.erase(std::remove(validPairs.begin(), validPairs.end(), p), validPairs.end()); //just remove the pair for now
+				
+		} else nonEdgeContract(p);
 	}
 }
 
@@ -682,6 +742,13 @@ void Face::calcNormal() {
 
 	mjbCross(v01, v02, norm);
 	mjbUnit(norm, norm);
+
+	normal.x = norm[0];
+	normal.y = norm[1];
+	normal.z = norm[2];
+
+
+	/* Sanity check on the new normal, may be bad for rougher geometry (large normal changes)
 	double oldNorm[3] = { normal.x, normal.y, normal.z };
 	double dot = mjbDot(oldNorm, norm);
 	if (dot > 0.) {
@@ -692,7 +759,8 @@ void Face::calcNormal() {
 		normal.x = norm[0] * -1.;
 		normal.y = norm[1] * -1.;
 		normal.z = norm[2] * -1.;
-	}
+	}*/
+	
 	
 }
 
@@ -714,7 +782,7 @@ icVector3 Pair::QuadricVector() {
 icVector3 Pair::Vector() {
 	updateQuadric();
 	glm::mat4x4 q = Quadric;
-	if (abs(glm::determinant(q) > .001)) {
+	if (abs(glm::determinant(q) > .001)) { //may want a smaller value to check against?
 		return QuadricVector();
 	}
 	//if cannot be computed from matrix, look along edge

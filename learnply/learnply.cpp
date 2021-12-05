@@ -40,10 +40,13 @@ vector<Mesh*> all_meshes;
 //The marker for which ply we're looking at, used to index into the vectors and cycle through them
 unsigned int curr_mesh = 0;
 unsigned int face_target = 0;
-double t_ratio = 100.;
+double t_ratio = 25.;
 bool view_error = false;
 
-string OBJ_PATH = "../data/geometry/";
+//To load all geometry use 
+//string OBJ_PATH = "../data/geometry/";
+
+string OBJ_PATH = "../data/geometry/cow/";
 
 Mesh* mesh;
 
@@ -55,16 +58,6 @@ float aspectRatio = (float)win_width / (float)win_height;
 const int view_mode = 0;		// 0 = othogonal, 1=perspective
 const double radius_factor = 0.9;
 
-/*
-Use keys 1 to 0 to switch among different display modes.
-Each display mode can be designed to show one type 
-visualization result.
-
-Predefined ones: 
-display mode 1: solid rendering
-display mode 2: show wireframes
-display mode 3: render each quad with colors of vertices
-*/
 int display_mode = 1;
 
 /*User Interaction related variabes*/
@@ -109,7 +102,8 @@ int main(int argc, char* argv[]) {
 
 	for (std::string i : all_obj_files) {
 		all_meshes.push_back(new Mesh(const_cast<char*>((OBJ_PATH + i).c_str())));
-		all_meshes.back()->initialize(all_meshes.back()->radius/t_ratio);
+		//all_meshes.back()->initialize(all_meshes.back()->radius/t_ratio);
+		all_meshes.back()->initialize(0.0);
 	}
 
 	//if no ply files, then exit with error. otherwise set the first ply
@@ -327,6 +321,7 @@ void keyboard(unsigned char key, int x, int y) {
 		else face_target = newFaceTarget;
 
 		if (face_target > mesh->flist.size()) {
+			free(all_meshes.at(curr_mesh));
 			all_meshes.at(curr_mesh) = new Mesh(const_cast<char*>((OBJ_PATH + all_obj_files.at(curr_mesh)).c_str()));
 			mesh = all_meshes.at(curr_mesh);
 			//mesh->initialize(mesh->radius / t_ratio); //t=.01*radius
