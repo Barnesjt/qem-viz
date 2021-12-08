@@ -371,80 +371,11 @@ void Mesh::nonEdgeContract(Pair* target) {
 	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), target), vBar->pairs.end());
 
 	//for all the faces, replace v0 and v1 with vBar
-	for (auto f : vBar->faces) {
-		for (int i = 0; i < 3; i++) {
-			if (f->verts[i] == remV0 || f->verts[i] == remV1) {
-				f->verts[i] = vBar;
-			}
-		}
-		//now calc new normal, and new Quadric for each face
-		f->calcNormal();
-		f->calcQuadric();
-	}
-
-	//add new vert
-	vlist.push_back(vBar);
-
-	//from vlist: remV0 remV1
-	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV0), vlist.end());
-	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV1), vlist.end());
-
-	//from validPairs: target
-	validPairs.erase(std::remove(validPairs.begin(), validPairs.end(), target), validPairs.end());
-
-}
-
-/*
-//I think we can skip this case (don't simplify edges at the open geometry)
-//Called when edge only has 1 face it's attached to (Mesh has some open geometry)
-void Mesh::edge1fContract(Pair* target) {
-	//I'd like to see if this runs
-	icVector3 newVert = target->Vector();
-	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
-	Vertex* remV0 = target->v0;
-	Vertex* remV1 = target->v1;
-	Edge* remE = target->edge;
-	Face* remF0 = remE->faces.at(0);
-	Edge* remEF0a = NULL;
-	Edge* remEF0b = NULL;
-
-	//find the 4 edges for the faces that will be removed
-	for (int i = 0; i < 3; i++) {
-		if (remF0->edges[i] != remE) {
-			if (remEF0a == NULL) remEF0a = remF0->edges[i];
-			else remEF0b = remF0->edges[i];
-		}
-	}
-
-	//combine the face lists for each
-	remEF0a->faces.insert(remEF0a->faces.end(), remEF0b->faces.begin(), remEF0b->faces.end());
-	//also remove the faces that will be cut
-	remEF0a->faces.erase(std::remove(remEF0a->faces.begin(), remEF0a->faces.end(), remF0), remEF0a->faces.end());
-
-	//now combine the 2 verticies face lists
-	vBar->faces.insert(vBar->faces.end(), remV0->faces.begin(), remV0->faces.end());
-	vBar->faces.insert(vBar->faces.end(), remV1->faces.begin(), remV1->faces.end());
-
-	//also remove the face that will be cut
-	vBar->faces.erase(std::remove(vBar->faces.begin(), vBar->faces.end(), remF0), vBar->faces.end());
-
-
-	//next combine the 2 verticies pair lists
-	vBar->pairs.insert(vBar->pairs.end(), remV0->pairs.begin(), remV0->pairs.end());
-	vBar->pairs.insert(vBar->pairs.end(), remV1->pairs.begin(), remV1->pairs.end());
-	//and remove pair that will be cut
-	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), target), vBar->pairs.end());
-
-
-	//for all the faces, replace v0 and v1 with vBar
 	//and if edge is remEF0b or remEF1b, replace with remEF0a or remEF0a
 	for (auto f : vBar->faces) {
 		for (int i = 0; i < 3; i++) {
 			if (f->verts[i] == remV0 || f->verts[i] == remV1) {
 				f->verts[i] = vBar;
-			}
-			if (f->edges[i] == remEF0b) {
-				f->edges[i] = remEF0a;
 			}
 		}
 		//now calc new normal, and new Quadric for each face
@@ -469,17 +400,79 @@ void Mesh::edge1fContract(Pair* target) {
 	//add new vert
 	vlist.push_back(vBar);
 
-	//remove degenerate geometry from Mesh lists: flist, elist, vlist, validPairs
-	//from flist: remF0 remF1
-	flist.erase(std::remove(flist.begin(), flist.end(), remF0), flist.end());
-
 	//from vlist: remV0 remV1
 	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV0), vlist.end());
 	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV1), vlist.end());
 
-	//from elist: remE remEF0b remEF1b
-	elist.erase(std::remove(elist.begin(), elist.end(), remE), elist.end());
-	elist.erase(std::remove(elist.begin(), elist.end(), remEF0b), elist.end());
+	//from validPairs: target
+	validPairs.erase(std::remove(validPairs.begin(), validPairs.end(), target), validPairs.end());
+}
+/*
+	icVector3 newVert = target->Vector();
+	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
+	Vertex* remV0 = target->v0;
+	Vertex* remV1 = target->v1;
+
+	//now combine the 2 verticies face lists
+	vBar->faces.insert(vBar->faces.end(), remV0->faces.begin(), remV0->faces.end());
+	vBar->faces.insert(vBar->faces.end(), remV1->faces.begin(), remV1->faces.end());
+
+	//remove dups
+	std::unordered_set<Face*> sf;
+	for (auto f : vBar->faces)
+		sf.insert(f);
+	vBar->faces.assign(sf.begin(), sf.end());
+	std::sort(vBar->faces.begin(), vBar->faces.end());
+
+	//now combine the 2 verticies edge lists
+	vBar->edges.insert(vBar->edges.end(), remV0->edges.begin(), remV0->edges.end());
+	vBar->edges.insert(vBar->edges.end(), remV1->edges.begin(), remV1->edges.end());
+
+	//remove dups
+	std::unordered_set<Edge*> se;
+	for (auto f : vBar->edges)
+		se.insert(f);
+	vBar->edges.assign(se.begin(), se.end());
+	std::sort(vBar->edges.begin(), vBar->edges.end());
+
+	//next combine the 2 verticies pair lists
+	vBar->pairs.insert(vBar->pairs.end(), remV0->pairs.begin(), remV0->pairs.end());
+	vBar->pairs.insert(vBar->pairs.end(), remV1->pairs.begin(), remV1->pairs.end());
+
+	//remove the dups
+	std::unordered_set<Pair*> sp;
+	for (auto f : vBar->pairs)
+		sp.insert(f);
+	vBar->pairs.assign(sp.begin(), sp.end());
+	std::sort(vBar->pairs.begin(), vBar->pairs.end());
+
+	//fix any pairs to point to the new vert
+	for (auto p : vBar->pairs) {
+		if (p->v0 == remV0 || p->v0 == remV1) p->v0 = vBar;
+		if (p->v1 == remV0 || p->v1 == remV1) p->v1 = vBar;
+	}
+
+	//and remove pair that will be cut
+	vBar->pairs.erase(std::remove(vBar->pairs.begin(), vBar->pairs.end(), target), vBar->pairs.end());
+
+	//for all the faces, replace v0 and v1 with vBar
+	for (auto f : vBar->faces) {
+		for (int i = 0; i < 3; i++) {
+			if (f->verts[i] == remV0 || f->verts[i] == remV1) {
+				f->verts[i] = vBar;
+			}
+		}
+		//now calc new normal, and new Quadric for each face
+		f->calcNormal();
+		f->calcQuadric();
+	}
+
+	//add new vert
+	vlist.push_back(vBar);
+
+	//from vlist: remV0 remV1
+	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV0), vlist.end());
+	vlist.erase(std::remove(vlist.begin(), vlist.end(), remV1), vlist.end());
 
 	//from validPairs: target
 	validPairs.erase(std::remove(validPairs.begin(), validPairs.end(), target), validPairs.end());
@@ -522,7 +515,7 @@ void Mesh::edge2fContract(Pair* target) {
 
 	//make new edges
 	Edge* repEdgeF0 = new Edge(oppVertF0, vBar, this);
-	Edge* repEdgeF1 = new Edge(oppVertF0, vBar, this);
+	Edge* repEdgeF1 = new Edge(oppVertF1, vBar, this);
 
 	//in oppVertF0 remove F0, remEF0a, remEF0b. add repEdgeF0
 	oppVertF0->faces.erase(std::remove(oppVertF0->faces.begin(), oppVertF0->faces.end(), remF0), oppVertF0->faces.end());
@@ -793,11 +786,16 @@ icVector3 Pair::Vector() {
 
 double Pair::QuadricError(icVector3 v) {
 	glm::mat4x4 q = Quadric;
-	return 
-		(v.x * q[0][0] * v.x + v.y * q[1][0] * v.x + v.z * q[2][0] * v.x + q[3][0] * v.x +
-		v.x * q[0][1] * v.y + v.y * q[1][1] * v.y + v.z * q[2][1] * v.y + q[3][1] * v.y +
-		v.x * q[0][2] * v.z + v.y * q[1][2] * v.z + v.z * q[2][2] * v.z + q[3][2] * v.z +
-		v.x * q[0][3] + v.y * q[1][3] + v.z * q[2][3] + q[3][3]);
+	//return 
+	//	(v.x * q[0][0] * v.x + v.y * q[1][0] * v.x + v.z * q[2][0] * v.x + q[3][0] * v.x +
+	//	v.x * q[0][1] * v.y + v.y * q[1][1] * v.y + v.z * q[2][1] * v.y + q[3][1] * v.y +
+	//	v.x * q[0][2] * v.z + v.y * q[1][2] * v.z + v.z * q[2][2] * v.z + q[3][2] * v.z +
+	//	v.x * q[0][3] + v.y * q[1][3] + v.z * q[2][3] + q[3][3]);
+	return
+		(v.x * q[0][0] * v.x + v.y * q[0][1] * v.x + v.z * q[0][2] * v.x + q[0][3] * v.x +
+			v.x * q[1][0] * v.y + v.y * q[1][1] * v.y + v.z * q[1][2] * v.y + q[1][3] * v.y +
+			v.x * q[2][0] * v.z + v.y * q[2][1] * v.z + v.z * q[2][2] * v.z + q[2][3] * v.z +
+			v.x * q[3][0] + v.y * q[3][1] + v.z * q[3][2] + q[3][3]);
 }
 
 void Pair::updateError() {

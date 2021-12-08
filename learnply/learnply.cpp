@@ -7,6 +7,12 @@
 #include <string>
 #include <iostream>
 
+#include <Eigen/Core>
+#include <Eigen/Eigenvalues>
+#include "glm/mat4x4.hpp"
+#include "glm/gtc/type_ptr.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+
 #include "glError.h"
 #include "gl/glew.h"
 #include "gl/freeglut.h"
@@ -32,6 +38,9 @@
 using std::vector;
 using std::string;
 
+//Eigen
+using namespace Eigen;
+
 //Vector of Meshes instead (Because why not just load everything at once)
 //Individual vectors for different data, this could be rolled into a single class, maybe later
 vector<string> all_obj_files;
@@ -40,13 +49,25 @@ vector<Mesh*> all_meshes;
 //The marker for which ply we're looking at, used to index into the vectors and cycle through them
 unsigned int curr_mesh = 0;
 unsigned int face_target = 0;
-double t_ratio = 25.;
+double t_ratio = 15.;
 bool view_error = false;
 
-//To load all geometry use 
-//string OBJ_PATH = "../data/geometry/";
+struct Ellipsoid {
+	double x,y,z;
+	double xS,yS,zS,wS;
+	glm::dmat4x4 totalT;
+	glm::dmat4x4 rotT;
+	glm::dmat4x4 scaleT;
+	glm::dmat4x4 transT;
 
-string OBJ_PATH = "../data/geometry/cow/";
+};
+
+vector<Ellipsoid*> errorEllip;
+
+//To load all geometry use 
+string OBJ_PATH = "../data/geometry/";
+
+//string OBJ_PATH = "../data/geometry/cow/";
 
 Mesh* mesh;
 
@@ -89,6 +110,11 @@ string dispModeString(int mode);
 void DoRasterString(float x, float y, float z, char* s);
 std::vector<std::string> get_all_obj_in_folder(std::string folder);
 
+void generate_ellipsoids(Mesh* mesh);
+void ellipsoid_transformation(Vertex* vert, Ellipsoid*);
+void display_ellipsoid(Ellipsoid* ellip);
+
+
 /******************************************************************************
 Main program.
 ******************************************************************************/
@@ -102,8 +128,8 @@ int main(int argc, char* argv[]) {
 
 	for (std::string i : all_obj_files) {
 		all_meshes.push_back(new Mesh(const_cast<char*>((OBJ_PATH + i).c_str())));
-		//all_meshes.back()->initialize(all_meshes.back()->radius/t_ratio);
-		all_meshes.back()->initialize(0.0);
+		all_meshes.back()->initialize(all_meshes.back()->radius/t_ratio);
+		//all_meshes.back()->initialize(0.0);
 	}
 
 	//if no ply files, then exit with error. otherwise set the first ply
@@ -324,11 +350,13 @@ void keyboard(unsigned char key, int x, int y) {
 			free(all_meshes.at(curr_mesh));
 			all_meshes.at(curr_mesh) = new Mesh(const_cast<char*>((OBJ_PATH + all_obj_files.at(curr_mesh)).c_str()));
 			mesh = all_meshes.at(curr_mesh);
-			//mesh->initialize(mesh->radius / t_ratio); //t=.01*radius
-			mesh->initialize(0.0); //edge contractions only: t=0.0
+			mesh->initialize(mesh->radius / t_ratio);
+			//mesh->initialize(0.0); //edge contractions only: t=0.0
+			//generate_ellipsoids(mesh);
 		}
 		if (face_target < mesh->flist.size()){
 			mesh->simplify(face_target);
+			generate_ellipsoids(mesh);
 		}
 		glutPostRedisplay();
 		break;
@@ -533,8 +561,95 @@ void display_mesh(Mesh* mesh) {
 
 	glEnd();
 
+	GLfloat mat_diffuse_ellip[4] = { 0.f, 0.4f, 0.f, 0.0f };
+	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse_ellip);
+
 	if (view_error) {
-		//draw ellipsoids
+		for (auto e : errorEllip) {
+			display_ellipsoid(e);
+		}
 	}
 
+}
+
+void generate_ellipsoids(Mesh* mesh) {
+
+	errorEllip.clear();
+
+	for (auto v : mesh->vlist) {
+		if (!v->faces.empty()) {
+			Ellipsoid* e = new Ellipsoid();
+			e->x = v->x;
+			e->y = v->y;
+			e->z = v->z;
+			ellipsoid_transformation(v,e);
+			errorEllip.push_back(e);
+		}
+		
+	}
+
+}
+
+
+void ellipsoid_transformation(Vertex* vert, Ellipsoid* ellip) {
+		
+	glm::dmat4x4 dmat = vert->Q;
+	Matrix4d eigMat;
+
+	for (int i = 0; i < 4; i++) {
+		for (int j = 0; j < 4; j++) {
+			eigMat(i,j) = dmat[i][j];
+		}
+	}
+
+	EigenSolver<Matrix4d> es(eigMat);
+
+	Matrix4cd D = es.eigenvalues().asDiagonal();
+	Matrix4cd R = es.eigenvectors();
+	Matrix4cd Rinv = es.eigenvectors().inverse();
+
+	Matrix4cd RinvD = Rinv*D;
+	glm::dmat4x4 totalT = glm::dmat4x4(1.0);
+	glm::dmat4x4 rotT = glm::dmat4x4(1.0);
+	glm::dmat4x4 scaleT = glm::dmat4x4(1.0);
+	glm::dmat4x4 transT = glm::dmat4x4(1.0);
+	transT = glm::translate(glm::mat4x4(1.), glm::vec3(vert->x, vert->y, vert->z));
+	scaleT = glm::scale(glm::mat4x4(1.), glm::vec3(D(0,0).real(), D(1, 1).real(), D(2, 2).real()));
+
+	for (int i = 0; i < 3; i++) {
+		for (int j = 0; j < 3; j++) {
+			//totalT[i][j] = RinvD(i, j).real();
+			rotT[i][j] = Rinv(i, j).real();
+			//scaleT[i][j] = D(j, i).real();
+		}
+	}
+	ellip->xS = D(0, 0).real();
+	ellip->yS = D(1, 1).real();
+	ellip->zS = D(2, 2).real();
+	//ellip->wS = D(3, 3).real();
+	
+	ellip->transT = transT;
+	ellip->rotT = glm::transpose(rotT);
+	ellip->scaleT = scaleT*.001;//glm::transpose(scaleT*.001);
+	ellip->totalT = scaleT * transT;//* glm::transpose(rotT);
+}
+
+void display_ellipsoid(Ellipsoid* ellip) {
+	glPushMatrix();
+
+//		glMultMatrixd(glm::value_ptr(ellip->rotT));
+		glTranslated(ellip->x, ellip->y, ellip->z);
+		glScaled(ellip->xS/500., ellip->yS / 100., ellip->zS / 100.);
+//		glMultMatrixd(glm::value_ptr(ellip->totalT));
+//		glTranslated(ellip->x, ellip->y, ellip->z);
+//		glScaled(ellip->xS / 1000., ellip->yS / 100., ellip->zS / 100.);
+//		glMultMatrixd(glm::value_ptr(ellip->transT * ellip->scaleT* ellip->rotT));
+//		glMultMatrixd(glm::value_ptr(ellip->transformation));
+//		glMultMatrixd(glm::value_ptr(ellip->scaleT * ellip->rotT));
+//		glMultMatrixd(glm::value_ptr(ellip->scaleT));
+//		glMultMatrixd(glm::value_ptr(ellip->totalT));
+			
+		glutSolidSphere(1.0, 20, 20);
+	glPopMatrix();
+	
 }
