@@ -320,8 +320,10 @@ void Mesh::seedInitialQuadrics() {
 	}
 }
 
-//TODO: nonEdgeContract is current broken
-// Symptom: Face with 3 identical verts observed
+// Seems this may be broken in some way
+// Symptom: Face with 3 identical verts observed in Skeletal Foot object
+// Unsure if this is an issue with the input file or our implementation,
+//   but the symptom is only observed in this specific mesh
 void Mesh::nonEdgeContract(Pair* target) {
 	icVector3 newVert = target->Vector();
 	Vertex* vBar = new Vertex(newVert.x, newVert.y, newVert.z);
@@ -672,6 +674,7 @@ void Mesh::edge2fContract(Pair* target) {
 
 void Mesh::simplify(unsigned int target) {
 	//don't perform simplify if target is too small
+	//lower limit set to 64 as this is the minimum face count shown in the paper's figures
 	if (target < 64) return;
 
 	while (flist.size() > target) {
@@ -753,8 +756,6 @@ void Face::calcNormal() {
 		normal.y = norm[1] * -1.;
 		normal.z = norm[2] * -1.;
 	}*/
-	
-	
 }
 
 void Pair::updateQuadric() {
@@ -779,8 +780,7 @@ icVector3 Pair::Vector() {
 		return QuadricVector();
 	}
 	//if cannot be computed from matrix, look along edge
-	//For now this is just halfway along the edge 
-	//TODO: Fix
+	// our implementation just picks the midpoint, this could be optimized
 	return icVector3((v0->x + v1->x) / 2., (v0->y + v1->y) / 2, (v0->z + v1->z) / 2.);
 }
 

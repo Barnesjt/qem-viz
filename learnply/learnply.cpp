@@ -51,6 +51,7 @@ unsigned int curr_mesh = 0;
 unsigned int face_target = 0;
 double t_ratio = 15.;
 bool view_error = false;
+bool view_info = false;
 
 struct Ellipsoid {
 	double x,y,z;
@@ -59,14 +60,12 @@ struct Ellipsoid {
 	glm::dmat4x4 rotT;
 	glm::dmat4x4 scaleT;
 	glm::dmat4x4 transT;
-
 };
 
 vector<Ellipsoid*> errorEllip;
 
 //To load all geometry use 
 string OBJ_PATH = "../data/geometry/";
-
 //string OBJ_PATH = "../data/geometry/cow/";
 
 Mesh* mesh;
@@ -106,7 +105,7 @@ void reshape(int width, int height);
 void display_mesh(Mesh* mesh);
 
 /*added functions*/
-string dispModeString(int mode);
+void show_mesh_info();
 void DoRasterString(float x, float y, float z, char* s);
 std::vector<std::string> get_all_obj_in_folder(std::string folder);
 
@@ -205,18 +204,19 @@ DoRasterString(float x, float y, float z, char* s) {
 	}
 }
 
-/******************************************************************************
-Convert a display mode number to a string
-******************************************************************************/
-string dispModeString(int mode) {
-	switch (mode) {
-	case 1:
-		return "Solid";
-	case 2:
-		return "Solid w/ Error Ellipsoids";
-	default:
-		return "Unrecognized";
-	}
+void show_mesh_info() {
+	glPushMatrix();
+	glLoadIdentity();
+	glDisable(GL_LIGHTING);
+	string dispFileStr = "File: " + all_obj_files.at(curr_mesh);
+	string dispTotalFace = "Total Faces: " + std::to_string(mesh->flist.size());
+	string dispCurrFaces = "Current Faces: " + std::to_string(mesh->flist.size());
+	float reduction = mesh->flist.size()/mesh->maxFaces;
+	dispCurrFaces += " ( " + std::to_string(reduction)+"% )";
+	glColor3f(0., 0., 0.);
+	DoRasterString(-.8f * zoom, .85f * zoom, 0.f, const_cast<char*>(dispFileStr.c_str()));
+	DoRasterString(-.8f * zoom, .8f * zoom, 0.f, const_cast<char*>(dispCurrFaces.c_str()));
+	glPopMatrix();
 }
 
 /******************************************************************************
@@ -363,6 +363,11 @@ void keyboard(unsigned char key, int x, int y) {
 
 	case 'e':
 		view_error = !view_error;
+		glutPostRedisplay();
+		break;
+
+	case 'i':
+		view_info = !view_info;
 		glutPostRedisplay();
 		break;
 
@@ -518,6 +523,8 @@ void display(void) {
 	/*display the mesh*/
 	display_mesh(mesh);
 
+	if (view_info) show_mesh_info();
+
 	glFlush();
 	glutSwapBuffers();
 	glFinish();
@@ -526,7 +533,7 @@ void display(void) {
 }
 
 /******************************************************************************
-Diaplay the polygon with visualization results
+Display the mesh with visualization results
 ******************************************************************************/
 
 void display_mesh(Mesh* mesh) {
@@ -572,10 +579,11 @@ void display_mesh(Mesh* mesh) {
 
 }
 
+/******************************************************************************
+Populate ellipsoid list, called after a simplification
+******************************************************************************/
 void generate_ellipsoids(Mesh* mesh) {
-
 	errorEllip.clear();
-
 	for (auto v : mesh->vlist) {
 		if (!v->faces.empty()) {
 			Ellipsoid* e = new Ellipsoid();
@@ -585,30 +593,32 @@ void generate_ellipsoids(Mesh* mesh) {
 			ellipsoid_transformation(v,e);
 			errorEllip.push_back(e);
 		}
-		
 	}
-
 }
 
-
+/******************************************************************************
+Fills an ellipsoid object with data from a specific vert.
+The eigen library is used for Eigen decomposition of the vert's Quadric.
+Unfortunately, this does not seem to work correctly as is, 
+	many permutations were tried, but the decomposition doesn't seem to directly yield
+	the correct transformations (as is stated in Garland's thesis.)
+******************************************************************************/
 void ellipsoid_transformation(Vertex* vert, Ellipsoid* ellip) {
 		
 	glm::dmat4x4 dmat = vert->Q;
 	Matrix4d eigMat;
-
 	for (int i = 0; i < 4; i++) {
 		for (int j = 0; j < 4; j++) {
 			eigMat(i,j) = dmat[i][j];
 		}
 	}
-
 	EigenSolver<Matrix4d> es(eigMat);
-
 	Matrix4cd D = es.eigenvalues().asDiagonal();
 	Matrix4cd R = es.eigenvectors();
 	Matrix4cd Rinv = es.eigenvectors().inverse();
-
 	Matrix4cd RinvD = Rinv*D;
+
+	//various results and attempts at composing the transformations in various ways
 	glm::dmat4x4 totalT = glm::dmat4x4(1.0);
 	glm::dmat4x4 rotT = glm::dmat4x4(1.0);
 	glm::dmat4x4 scaleT = glm::dmat4x4(1.0);
@@ -634,6 +644,16 @@ void ellipsoid_transformation(Vertex* vert, Ellipsoid* ellip) {
 	ellip->totalT = scaleT * transT;//* glm::transpose(rotT);
 }
 
+/******************************************************************************
+Draws an individual ellipsoid:
+   Centered on the vertex
+   Scaling from D (eigenvalues matrix from decomposition)
+   Rotation from Rinv (matrix from decomposition result)
+
+Below are many attempts at different permutations of applying data from the decompositon.
+
+Despite following the source material, our results did not reflect those from the paper.
+******************************************************************************/
 void display_ellipsoid(Ellipsoid* ellip) {
 	glPushMatrix();
 

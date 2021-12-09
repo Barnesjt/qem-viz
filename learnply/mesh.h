@@ -21,6 +21,12 @@ class Mesh;
 class Edge;
 class Pair;
 
+//Our owm implementation of data structures
+
+//The cross referencing seems to be convoluted, but other attempts which minimized pointers to other objects
+//  performed very poorly. Unfortunately it is quite a hassle to update these structures correctly when changed.
+//  If work were to continue I would seek a more optimal middleground between effiency and ease of updating (as QEM requires).
+
 __declspec(align(16)) class Vertex {
 public:
 	double x, y, z;
