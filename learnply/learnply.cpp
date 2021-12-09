@@ -33,6 +33,7 @@
 //For sorting file names into best order (e.g. r2.ply before r10.ply)
 #include "natural_sort.hpp"
 
+#include <iomanip>
 
 //Vectors and Strings
 using std::vector;
@@ -51,7 +52,7 @@ unsigned int curr_mesh = 0;
 unsigned int face_target = 0;
 double t_ratio = 15.;
 bool view_error = false;
-bool view_info = false;
+bool view_info = true;
 
 struct Ellipsoid {
 	double x,y,z;
@@ -211,8 +212,11 @@ void show_mesh_info() {
 	string dispFileStr = "File: " + all_obj_files.at(curr_mesh);
 	string dispTotalFace = "Total Faces: " + std::to_string(mesh->flist.size());
 	string dispCurrFaces = "Current Faces: " + std::to_string(mesh->flist.size());
-	float reduction = mesh->flist.size()/mesh->maxFaces;
-	dispCurrFaces += " ( " + std::to_string(reduction)+"% )";
+	float reduction = ((float)mesh->flist.size()/(float)mesh->maxFaces)*100.;
+	std::ostringstream reducStream;
+	reducStream << std::setprecision(5);
+	reducStream << reduction;
+	dispCurrFaces += " ( " + reducStream.str() +"% )";
 	glColor3f(0., 0., 0.);
 	DoRasterString(-.8f * zoom, .85f * zoom, 0.f, const_cast<char*>(dispFileStr.c_str()));
 	DoRasterString(-.8f * zoom, .8f * zoom, 0.f, const_cast<char*>(dispCurrFaces.c_str()));
