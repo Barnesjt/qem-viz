@@ -27,13 +27,29 @@ Input OBJ files should be added to data/geometry/ prior to launching the executa
 |  t  | Cycles through OBJ files |
 |  q  | Begin mesh simplification (requires console input for the target number of faces) |
 |  e  | Toggle error ellipsoid visualization |
+|  i  | Toggle information text |
 |  r  | Reset view |
 
 ## Mouse
 
+| Key | Action |
+| --- | ------ |
 | Left click and drag | Pan view |
 | Right click and drag | Rotate view |
 | Scroll wheel | Zoom view |
+
+# Known Issues
+
+- Simplification produces slightly different results than a traditional QEM algorithm
+- Error ellipsoids are not properly transformed
+  - Eigen decomposition a vertex's quadric (the result of summing adjacent face's quadric) seems good
+  - Resulting D (eigenvalues) and Rinv (partial result of decomposition) do not accurately transform the ellipsoid
+- Trouble simplifiying some types of geometry
+  - Cow model works well
+  - The skeletal foot crashes between 750 and 500
+  - The bunny crashes early in during simplification
+  - I suspect the issue is related to potential problematic geometry defined in the input objs (unreferenced or invalid faces/verticies)
+    - The implementation does not attempt to sanitize input geometry
 
 # Code Attributions
 
@@ -47,8 +63,14 @@ Input OBJ files should be added to data/geometry/ prior to launching the executa
    - CS450 http://web.engr.oregonstate.edu/~mjb/cs550/loadobjfile.cpp
 - Learnply base project:
    - Oregon State University CS553 (Scientific Visualization)
-- Eigen library (for matrix types and operations):
+- Eigen library (Eigen decomposition):
    - https://eigen.tuxfamily.org/index.php?title=Main_Page
+- OpenGL Mathematics (for matrix types and operations)
+   - https://glm.g-truc.net/0.9.9/
+- FreeGLUT (OpenGL Utility Toolkit library)
+   - http://freeglut.sourceforge.net/
+- GLEW  (OpenGL Extension Wrangler library)
+   - http://glew.sourceforge.net/
 
 # References
 
